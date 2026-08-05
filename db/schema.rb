@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_04_192112) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_05_190852) do
   create_table "level_stats", force: :cascade do |t|
     t.float "cable_subscribe_p95"
     t.float "cpu_avg_pct"
@@ -34,8 +34,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_04_192112) do
   create_table "runs", force: :cascade do |t|
     t.text "config"
     t.datetime "created_at", null: false
-    t.integer "failed_requests"
     t.string "generator"
+    t.integer "harness_errors"
     t.datetime "imported_at"
     t.string "k6_version"
     t.string "path"
@@ -47,6 +47,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_04_192112) do
     t.string "target"
     t.integer "total_broadcasts"
     t.integer "total_requests"
+    t.integer "unanswered_requests"
     t.datetime "updated_at", null: false
     t.index ["stamp"], name: "index_runs_on_stamp", unique: true
   end

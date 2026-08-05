@@ -21,6 +21,22 @@ class Run < ApplicationRecord
     level_stats.maximum(:vus)
   end
 
+  # Share of the run's requests the app never answered.
+  #
+  # The proportion is the number that means something: 157 unanswered is a bad
+  # run at 862 requests and a rounding error at 300,000.
+  def unanswered_share
+    return nil if total_requests.blank? || total_requests.zero? || unanswered_requests.blank?
+
+    unanswered_requests.to_f / total_requests
+  end
+
+  def answered_requests
+    return nil if total_requests.blank?
+
+    total_requests - unanswered_requests.to_i
+  end
+
   def peak_cpu_share_of_host
     return nil if peak_cpu_pct.blank?
 

@@ -26,6 +26,13 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 
+# Parsing k6's metrics.csv. Declared explicitly because csv stopped being a
+# default gem in Ruby 3.4 — and it is needed for real: the HTTP status sits past
+# fields that can legitimately contain commas, including the error message that
+# is only populated on the failures being counted, so a String#split there would
+# misread exactly the rows that matter.
+gem "csv"
+
 # Add HTTP asset caching/compression and X-Sendfile acceleration to Puma [https://github.com/basecamp/thruster/]
 gem "thruster", require: false
 

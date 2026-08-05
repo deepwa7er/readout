@@ -35,6 +35,31 @@ module RunsHelper
     tag.span(number_with_delimiter(count), class: "figure--bad")
   end
 
+  def request_count_figure(count)
+    return tag.span("—", class: "figure--none") if count.blank?
+
+    number_with_delimiter(count)
+  end
+
+  # Requests the app never answered, carrying the share that gives the count its
+  # scale — 157 is most of a small run and nothing at all in a large one.
+  #
+  # Zero prints muted rather than red. A run where every request came back should
+  # not draw the eye to the figure saying so.
+  def unanswered_figure(run)
+    count = run.unanswered_requests
+    return tag.span("—", class: "figure--none") if count.blank?
+    return tag.span("0", class: "figure--none") if count.zero?
+
+    share = run.unanswered_share
+    text = number_with_delimiter(count)
+    # Sub-percent shares get a second digit: "0.0%" reads as none, and none is
+    # the one thing this figure is not saying.
+    text += " (#{number_to_percentage(share * 100, precision: share < 0.01 ? 2 : 1)})" if share
+
+    tag.span(text, class: "figure--bad")
+  end
+
   def seconds_label(value)
     return "—" if value.blank?
 

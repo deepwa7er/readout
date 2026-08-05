@@ -27,6 +27,29 @@
   <% end %>
 </dl>
 
+<h2>Requests</h2>
+
+<dl class="settings">
+  <div>
+    <dt>Received</dt>
+    <dd><%= request_count_figure(@run.total_requests) %></dd>
+  </div>
+  <div>
+    <dt>Never answered</dt>
+    <dd><%= unanswered_figure(@run) %></dd>
+  </div>
+</dl>
+
+<p class="finding-body measure muted">
+  <strong>Received</strong> is every request the harness sent during the run,
+  including the ones it sent while people were still arriving.
+  <strong>Never answered</strong> counts the ones Campfire produced no response
+  for at all — the connection failed, or the proxy in front of it gave up
+  waiting and answered with a gateway error on its behalf. A 404 or a 500 is
+  <em>not</em> counted here: those are the application responding, and a server
+  that refuses is telling you something different from one that goes quiet.
+</p>
+
 <h2>Requests per second</h2>
 
 <% if @run.level_stats.empty? %>

@@ -58,7 +58,8 @@ module Analysis
           peak_wal_bytes: window && trace.peak_wal_bytes(window),
           total_broadcasts: total_of(metrics, "campfire_broadcasts_received"),
           total_requests: total_of(metrics, "http_reqs"),
-          failed_requests: total_of(metrics, "campfire_errors"),
+          unanswered_requests: metrics.unanswered_requests,
+          harness_errors: total_of(metrics, "campfire_errors"),
           config: config.explicit_settings.to_json
         )
         run.save!

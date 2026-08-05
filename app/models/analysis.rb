@@ -25,6 +25,22 @@ module Analysis
     data_received
   ].freeze
 
+  # HTTP statuses that mean the application never answered.
+  #
+  # These are not "errors" in the sense a 4xx is. A 404 or a 500 is the app
+  # responding — it received the request, ran, and decided something. Every
+  # status here means it did not:
+  #
+  #   0    no response reached the client at all: the connection failed, was
+  #        reset, or timed out client-side. k6 records the request with no status.
+  #   502  kamal-proxy could not get a usable response out of the app.
+  #   503  kamal-proxy had no healthy target to send it to.
+  #   504  the app did not answer before the proxy gave up waiting.
+  #
+  # The 5xx three are answers the *proxy* invented because the app produced
+  # none, which is why they belong here rather than with application errors.
+  UNANSWERED_STATUSES = [ 0, 502, 503, 504 ].to_set.freeze
+
   # Fraction of each level's window discarded as settling time. A level that has
   # just been stepped into is still filling connection pools and warming caches,
   # and including that transient makes every step look worse than it is.
