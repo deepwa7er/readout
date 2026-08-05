@@ -1,0 +1,47 @@
+<% content_for :title, "Readout — #{@run.stamp}" %>
+
+<%= link_to "← All runs", runs_path, class: "back-link" %>
+
+<header class="page-header">
+  <h1><%= @run.stamp %></h1>
+</header>
+
+<p class="meta">
+  <%= @run.scenario.to_s.sub("scenarios/", "").presence || "unknown scenario" %>
+</p>
+
+<h2>Settings</h2>
+
+<dl class="settings">
+  <% if @run.settings.blank? %>
+    <div>
+      <dt>defaults</dt>
+      <dd>nothing overridden</dd>
+    </div>
+  <% end %>
+  <% @run.settings.each do |key, value| %>
+    <div>
+      <dt><%= lever_label(key) %></dt>
+      <dd><%= value %></dd>
+    </div>
+  <% end %>
+</dl>
+
+<h2>Requests per second</h2>
+
+<% if @run.level_stats.empty? %>
+  <p class="muted measure">
+    This run did not last long enough to record anything.
+  </p>
+<% else %>
+  <%= throughput_by_load_chart(@run) %>
+
+  <p class="finding-body measure muted">
+    <strong>Requests per second</strong> is how many actions the server finished
+    each second — opening a room, loading older messages, sending a message.
+    Higher is better.
+    <strong>People at once</strong> is how many simulated users were browsing
+    simultaneously. If the line stops rising as people are added, the server has
+    reached as much work as it can do.
+  </p>
+<% end %>

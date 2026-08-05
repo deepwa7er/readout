@@ -1,0 +1,55 @@
+<% content_for :title, "Readout — new load test" %>
+
+<%= link_to "← All runs", runs_path, class: "back-link" %>
+
+<header class="page-header">
+  <h1>New load test</h1>
+</header>
+
+<% if @active %>
+  <section class="verdict measure">
+    <strong>A load test is already running.</strong>
+    <p>
+      Only one runs at a time — two sharing the same machine as the generator,
+      and the same Campfire as the target, would each measure the other.
+    </p>
+    <div class="actions">
+      <%= link_to "Watch it", test_run_path(@active["id"]), class: "button" %>
+      <%= button_to "Stop it", cancel_test_run_path(@active["id"]), class: "button button--danger" %>
+    </div>
+  </section>
+<% else %>
+  <%= form_with url: test_runs_path, method: :post do |form| %>
+    <div class="measure">
+      <%= label_tag :people, "People in the chat" %>
+      <%= number_field_tag :people, @people, min: 1, max: 2000, autocomplete: "off" %>
+      <p class="meta">how many are in the room at the same time</p>
+    </div>
+
+    <p class="finding-body measure muted">
+      Everyone joins over
+      <%= TestRunsController::RAMP_SECONDS %> seconds, then holds it for
+      <%= TestRunsController::HOLD_SECONDS %> seconds — about
+      <%= TestRunsController::RAMP_SECONDS + TestRunsController::HOLD_SECONDS %>
+      seconds in total.
+    </p>
+
+    <p class="finding-body measure muted">
+      Everyone joins the same room, holds a live connection, and posts a message
+      about every <%= TestRunsController::MESSAGE_INTERVAL_SECONDS %> seconds.
+      Every message has to be delivered to everyone else present — so the work
+      grows with the <em>square</em> of this number, which is what makes a chat
+      server expensive.
+    </p>
+
+    <div class="measure" style="margin-top: 1.5rem">
+      <%= label_tag :note, "Note (optional)" %>
+      <%= text_field_tag :note, nil, placeholder: "what this run is testing" %>
+    </div>
+
+    <div class="actions">
+      <%= form.submit "Start test", class: "button" %>
+      <%= link_to "Cancel", runs_path, class: "back-link" %>
+    </div>
+  <% end %>
+<% end %>

@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+#
+# Publishes load-test results to the VPS instance.
+#
+#   bin/publish                 import results locally, ship the database, restart
+#   bin/publish --no-restart    ship without restarting the remote service
+#
+# Why this exists: the raw results only exist on this Mac. `bin/run.sh` writes
+# them here, so the VPS has no files to import from. Only readout's import path
+# touches the filesystem — every page reads the database — so the SQLite file is
+# the thing worth shipping, not 80MB of CSV per run.
+#
+# This imports into a LOCAL production database (same schema, same analyzer) and
+# rsyncs that file into the container's storage volume.
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+HOST="${READOUT_SSH:-deepwa7er}"
+REMOTE_DIR=/opt/readout/storage
+DB=storage/production.sqlite3
+RESTART=true
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --no-restart) RESTART=false; shift ;;
+    -h|--help)    awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"; exit 0 ;;
+    -*)           echo "unknown option: $1 (try --help)" >&2; exit 1 ;;
+    # A bare run id, passed by the runner service after a run finishes. Every
+    # run is imported regardless -- import is idempotent and re-importing keeps
+    # earlier runs current with the analyzer -- so this only labels the output.
+    *)            RUN_ID="$1"; shift ;;
+  esac
+done
+
+if [ -n "${RUN_ID:-}" ]; then
+  echo "==> publishing after run ${RUN_ID}"
+fi
+
+if command -v mise >/dev/null 2>&1; then
+  rails() { mise exec -- bin/rails "$@"; }
+else
+  rails() { bin/rails "$@"; }
+fi
+
+if pgrep -x k6 >/dev/null 2>&1; then
+  echo "k6 is running — refusing to import mid-run." >&2
+  echo "This machine is the load generator; parsing a 700k-line CSV would steal" >&2
+  echo "cores from the test and show up as latency blamed on the app." >&2
+  exit 1
+fi
+
+echo "==> importing results into the local production database"
+RAILS_ENV=production rails db:prepare
+RAILS_ENV=production rails runner \
+  'runs = Analysis::Importer.import_all(Rails.configuration.x.campfire_stress.results_root); puts "    imported #{runs.length} run(s); #{Run.count} total"'
+
+if [ ! -f "$DB" ]; then
+  echo "expected $DB to exist after import" >&2
+  exit 1
+fi
+
+echo "==> shipping $(du -h "$DB" | cut -f1) to ${HOST}:${REMOTE_DIR}"
+
+# SQLite keeps recent writes in a -wal sidecar; copying only the main file can
+# ship a database missing its most recent commits. A checkpoint folds the WAL
+# back in first so the file that travels is complete on its own.
+RAILS_ENV=production rails runner 'ActiveRecord::Base.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")'
+
+# Plain flags only: macOS ships openrsync, which does not accept GNU rsync's
+# --info/--progress options.
+rsync -az "$DB" "${HOST}:${REMOTE_DIR}/production.sqlite3"
+
+# The container runs as uid 1000 and must be able to write the file it now owns.
+ssh "$HOST" "chown 1000:1000 ${REMOTE_DIR}/production.sqlite3"
+
+if [ "$RESTART" = true ]; then
+  echo "==> restarting readout"
+  ssh "$HOST" "systemctl restart readout"
+fi
+
+echo "==> https://readout.intern.deepwa7er.net"
