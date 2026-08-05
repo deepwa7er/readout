@@ -95,9 +95,10 @@ export default class extends Controller {
         this.showWarning(payload.dropped || 0)
 
         // Both axes are fixed for the whole run, from numbers known before it
-        // starts: the target rate and the fixed 20s+30s shape. A frame that
-        // rescales as data arrives makes a steady line look like it is moving,
-        // and makes runs impossible to compare by eye.
+        // starts: the target rate and the scenario's fixed shape, which the
+        // runner reports as duration_s. A frame that rescales as data arrives
+        // makes a steady line look like it is moving, and makes runs impossible
+        // to compare by eye.
         this.setBounds(payload)
       }
     } catch {
