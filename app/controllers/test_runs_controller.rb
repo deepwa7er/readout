@@ -8,32 +8,37 @@ class TestRunsController < ApplicationController
 
   # One scenario, one lever.
   #
-  # The others are still reachable from the CLI, but the UI offers only this: a
-  # fixed request rate. The VU-based scenarios measure "people", who pause
-  # between actions — so when the server slows they slow with it and the request
-  # rate falls, which made a saturated server look like a quiet one. Requests per
-  # second is the number worth choosing, so it is the only thing to choose.
+  # The others are still reachable from the CLI, but the UI offers only this one.
+  # People is what decides a chat server's load: the same five posts a second
+  # cost five hundred deliveries in a room of a hundred and fifty in a room of
+  # ten, so a request rate names a number that cannot be interpreted on its own.
+  # Choosing people fixes the request rate and the delivery rate together.
   SCENARIO = "chat".freeze
 
-  # Matches the fixed shape in scenarios/arrival.js. Stated here so the page can
+  # Matches the fixed shape in scenarios/chat.js. Stated here so the page can
   # describe what it is about to do.
-  RAMP_SECONDS = 20
-  HOLD_SECONDS = 30
+  #
+  # A chat run does not ramp. Everyone joins at once, and the measured window
+  # opens when they are all in — so the run describes one room size rather than
+  # smearing across every size it passed through on the way up.
+  JOIN_SECONDS = 10
+  CHAT_SECONDS = 50
 
-  # Two levers, on purpose.
+  # One lever, on purpose.
   #
   # The harness has around twenty, and putting all of them on a form made the
-  # common case ("run more traffic at it") harder than it should be. These two
-  # both mean the same thing in the same direction — turn either up and the
-  # server does more work — which is the only mental model the form needs.
+  # common case ("what does a room this size cost") harder than it should be.
+  # People is the one that decides the answer: it fixes the request rate and the
+  # delivery rate at once, where a request rate fixes neither.
   #
   # Everything else stays available through the runner's API and the CLI; it is
   # hidden here, not removed.
   DEFAULT_PEOPLE = 100
 
-  # Seconds between one person's messages. Fixed rather than exposed: it is a
+  # Seconds between one person's messages. Not sent as a lever — the runner does
+  # not accept it, and the scenario's own default is this same value. It is a
   # property of how chatty a room is, not a capacity dial, and three messages a
-  # minute is already a busy participant.
+  # minute is already a busy participant. Stated here only so the page can say so.
   MESSAGE_INTERVAL_SECONDS = 20
 
   # How many sessions bin/mint-sessions.sh last minted. Asking for more VUs than
@@ -48,7 +53,6 @@ class TestRunsController < ApplicationController
   def self.levers_for(people)
     {
       "PEOPLE" => people,
-      "MESSAGE_INTERVAL_SECONDS" => MESSAGE_INTERVAL_SECONDS,
       "USER_POOL" => [ people, MAX_MINTED_SESSIONS ].min
     }
   end

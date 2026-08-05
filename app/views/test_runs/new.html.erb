@@ -27,11 +27,13 @@
     </div>
 
     <p class="finding-body measure muted">
-      Everyone joins over
-      <%= TestRunsController::RAMP_SECONDS %> seconds, then holds it for
-      <%= TestRunsController::HOLD_SECONDS %> seconds — about
-      <%= TestRunsController::RAMP_SECONDS + TestRunsController::HOLD_SECONDS %>
-      seconds in total.
+      Everyone joins at once over about
+      <%= TestRunsController::JOIN_SECONDS %> seconds, then the room chats at a
+      flat rate for <%= TestRunsController::CHAT_SECONDS %> seconds —
+      <%= TestRunsController::JOIN_SECONDS + TestRunsController::CHAT_SECONDS %>
+      seconds in total. There is no ramp: everyone is present for the whole
+      measured window, so the run tells you what a room of this size costs
+      rather than averaging across every size on the way up.
     </p>
 
     <p class="finding-body measure muted">
