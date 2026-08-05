@@ -194,10 +194,20 @@ export default class extends Controller {
 
     const newest = this.points[this.points.length - 1].t
 
+    // Never before the data begins.
+    //
+    // A series does not have to start at zero. The delivery-latency series
+    // starts at the first message, which on a chat run is ten seconds in, after
+    // everyone has finished joining -- and seeding the playhead relative to zero
+    // put it *behind* the first point, so nothing was ever revealed and the
+    // chart sat empty with a "—" readout while the payload held a full minute of
+    // data.
+    const oldest = this.points[0].t
+
     // Opening the page mid-run should show the history already recorded, not
     // replay it from the beginning.
     if (this.playhead === null) {
-      this.playhead = Math.max(0, newest - this.buffer)
+      this.playhead = Math.max(oldest, newest - this.buffer)
       return
     }
 
@@ -208,8 +218,9 @@ export default class extends Controller {
     this.playhead += delta
     this.playhead += (goal - this.playhead) * Math.min(1, delta * 2)
 
-    // Never draw ahead of the data.
+    // Never draw ahead of the data, nor behind where it starts.
     if (this.playhead > newest) this.playhead = newest
+    if (this.playhead < oldest) this.playhead = oldest
   }
 
   palette() {
@@ -239,7 +250,15 @@ export default class extends Controller {
       ctx.fillStyle = muted
       ctx.font = "12px system-ui, sans-serif"
       ctx.textAlign = "center"
-      ctx.fillText("waiting for the first second of data…", w / 2, h / 2)
+      // A chat run opens with a join window in which no message exists yet, so
+      // this chart is legitimately empty for its first ten seconds. Saying so
+      // beats an unexplained blank frame, which reads as broken.
+      ctx.fillText(
+        this.seriesValue === "latency"
+          ? "nobody has spoken yet — waiting for the first message…"
+          : "waiting for the first second of data…",
+        w / 2, h / 2
+      )
       return
     }
 
