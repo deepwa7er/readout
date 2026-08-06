@@ -6,6 +6,7 @@ class Run < ApplicationRecord
 
   has_many :level_stats, -> { order(:vus) }, dependent: :delete_all
   has_many :server_samples, -> { order(:at) }, dependent: :delete_all
+  has_many :throughput_samples, -> { order(:at) }, dependent: :delete_all
 
   validates :stamp, presence: true, uniqueness: true
 
@@ -19,6 +20,18 @@ class Run < ApplicationRecord
 
   def peak_vus
     level_stats.maximum(:vus)
+  end
+
+  # Whether this run visited more than one load level, i.e. whether there is a
+  # curve to plot throughput against.
+  #
+  # Most runs no longer do. A stepped ramp answers "where does it break" and
+  # holds several levels; chat and enterprise — the two the dashboard launches —
+  # answer "what does this size cost" and deliberately hold exactly one. Charting
+  # a single-level run against load draws one dot, so those are charted against
+  # time instead.
+  def load_curve?
+    level_stats.to_a.count { |stat| stat.requests_per_second.present? } >= 2
   end
 
   # Share of the run's requests the app never answered.

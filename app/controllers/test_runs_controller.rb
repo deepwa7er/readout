@@ -21,14 +21,22 @@ class TestRunsController < ApplicationController
   SCENARIO_ENTERPRISE = "enterprise".freeze
   ALLOWED_SCENARIOS = [ SCENARIO_CHAT, SCENARIO_ENTERPRISE ].freeze
 
-  # Matches the fixed shape in scenarios/chat.js and scenarios/enterprise.js.
-  # Stated here so the page can describe what it is about to do.
+  # Matches the fixed shape in scenarios/chat.js. Stated here so the page can
+  # describe what it is about to do.
   #
-  # Neither run ramps. Everyone joins at once, and the measured window opens
-  # when they are all in — so the run describes one load level rather than
+  # A chat run does not ramp. Everyone joins at once, and the measured window
+  # opens when they are all in — so the run describes one load level rather than
   # smearing across every level on the way up.
   JOIN_SECONDS = 10
   CHAT_SECONDS = 50
+
+  # Matches the shape scenarios/enterprise.js takes from config.js, which is NOT
+  # chat's: it is a ramping-VUs run that climbs to the requested number of
+  # employees, holds them, and comes back down. Only the hold is a measured
+  # level, and the whole thing takes nearly three minutes rather than one.
+  ENTERPRISE_RAMP_UP_SECONDS = 30
+  ENTERPRISE_HOLD_SECONDS = 120
+  ENTERPRISE_RAMP_DOWN_SECONDS = 15
 
   # One lever per scenario, on purpose.
   #

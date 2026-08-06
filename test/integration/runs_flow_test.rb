@@ -57,6 +57,35 @@ class RunsFlowTest < ActionDispatch::IntegrationTest
     assert_select ".key-row", false
   end
 
+  # A chat or enterprise run holds one population from start to finish, so there
+  # is no curve to draw against load. Charted that way it was a lone dot, and a
+  # run cancelled before its level was held long enough had nothing at all --
+  # which is what "the chart is empty" meant.
+  test "a single-level run is charted against time instead of against load" do
+    single = Run.create!(stamp: "20260101-130000", scenario: "scenarios/enterprise.js")
+    single.level_stats.create!(vus: 250, requests_per_second: 42.0, error_count: 0)
+    60.times { |second| single.throughput_samples.create!(at: Time.zone.at(1_700_000_000 + second), requests: 40 + second) }
+
+    get run_path(single)
+
+    assert_response :success
+    assert_select "svg.chart--plotted polyline"
+    assert_select "p", /drawn against time rather than against people/
+    assert_select "p", /measured at/
+  end
+
+  # The one case that genuinely has nothing to show says so, rather than
+  # rendering an empty frame.
+  test "a run that recorded nothing says so" do
+    nothing = Run.create!(stamp: "20260101-140000", scenario: "scenarios/enterprise.js")
+
+    get run_path(nothing)
+
+    assert_response :success
+    assert_select "svg", false
+    assert_select "p", /did not last long enough/
+  end
+
   test "import reports a missing results directory instead of failing silently" do
     original = Rails.configuration.x.campfire_stress.results_root
     Rails.configuration.x.campfire_stress.results_root = "/nonexistent/path"

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_05_190852) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_06_140000) do
   create_table "level_stats", force: :cascade do |t|
     t.float "cable_subscribe_p95"
     t.float "cpu_avg_pct"
@@ -65,6 +65,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_05_190852) do
     t.index ["run_id"], name: "index_server_samples_on_run_id"
   end
 
+  create_table "throughput_samples", force: :cascade do |t|
+    t.datetime "at"
+    t.datetime "created_at", null: false
+    t.integer "requests"
+    t.integer "run_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["run_id"], name: "index_throughput_samples_on_run_id"
+  end
+
   add_foreign_key "level_stats", "runs"
   add_foreign_key "server_samples", "runs"
+  add_foreign_key "throughput_samples", "runs"
 end

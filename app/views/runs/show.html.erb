@@ -52,11 +52,11 @@
 
 <h2>Requests per second</h2>
 
-<% if @run.level_stats.empty? %>
-  <p class="muted measure">
-    This run did not last long enough to record anything.
-  </p>
-<% else %>
+<%# Two charts of the same measure, and which one a run gets is decided by the
+    run rather than by preference. Against load it needs several levels to be a
+    curve; a run that holds one population has one point, and its shape is over
+    time. See Run#load_curve?. %>
+<% if @run.load_curve? %>
   <%= throughput_by_load_chart(@run) %>
 
   <p class="finding-body measure muted">
@@ -66,5 +66,23 @@
     <strong>People at once</strong> is how many simulated users were browsing
     simultaneously. If the line stops rising as people are added, the server has
     reached as much work as it can do.
+  </p>
+<% elsif (over_time = throughput_over_time_chart(@run)) %>
+  <%= over_time %>
+
+  <p class="finding-body measure muted">
+    <strong>Requests per second</strong> is how many actions the server finished
+    each second — opening a room, loading older messages, sending a message.
+    This run held one load level from start to finish, so it is drawn against
+    time rather than against people: the opening burst is everyone arriving, and
+    what matters after that is whether the line holds steady or sags as the
+    server falls behind.
+    <% if (level = @run.level_stats.first) %>
+      It was measured at <strong><%= level.vus %></strong> people at once.
+    <% end %>
+  </p>
+<% else %>
+  <p class="muted measure">
+    This run did not last long enough to record anything.
   </p>
 <% end %>
