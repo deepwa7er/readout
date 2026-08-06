@@ -63,6 +63,58 @@ module Analysis
       end
     end
 
+    # The series a single-level run is charted against. It has to cover the whole
+    # run, second by second, or the chart it feeds is the empty frame this exists
+    # to replace.
+    test "records requests completed per second across the whole run" do
+      Dir.mktmpdir do |dir|
+        path = write_run(dir, stamp: "20260101-000005")
+        run = Importer.new(path).import
+
+        assert_equal 160, run.throughput_samples.count, "one row per second of the run"
+        assert_equal [ 1 ], run.throughput_samples.pluck(:requests).uniq
+      end
+    end
+
+    # A second in which nothing completed is a measurement, not a missing one.
+    test "seconds with no completed requests are recorded as zero" do
+      Dir.mktmpdir do |dir|
+        path = write_run(dir, stamp: "20260101-000006")
+
+        # A ten-second stall in the middle, with the VU timeline unbroken so the
+        # run's window still spans it.
+        metrics = File.join(path, "metrics.csv")
+        kept = File.readlines(metrics).reject do |line|
+          line.start_with?("http_reqs,") && (1_700_000_070..1_700_000_079).cover?(line.split(",")[1].to_i)
+        end
+        File.write(metrics, kept.join)
+
+        run = Importer.new(path).import
+        stalled = run.throughput_samples.where(at: Time.zone.at(1_700_000_070)..Time.zone.at(1_700_000_079))
+
+        assert_equal 10, stalled.count
+        assert_equal [ 0 ], stalled.pluck(:requests).uniq
+      end
+    end
+
+    # Stragglers finishing their sessions after a run ends hold a constant, tiny
+    # VU count for long enough to look like a plateau. It is not a level, and
+    # letting it become one draws a load curve out of the run's dying tail.
+    test "an idle tail is not imported as a level" do
+      Dir.mktmpdir do |dir|
+        path = write_run(dir, stamp: "20260101-000007")
+
+        # 40 seconds at 2 VUs with no requests, appended after the run proper.
+        File.open(File.join(path, "metrics.csv"), "a") do |file|
+          (0..39).each { |offset| file.puts "vus,#{1_700_000_160 + offset},2,,,,,,,,,,,,,,,," }
+        end
+
+        run = Importer.new(path).import
+
+        assert_equal [ 10, 20 ], run.level_stats.pluck(:vus)
+      end
+    end
+
     test "only settings explicitly set for the run are kept" do
       Dir.mktmpdir do |dir|
         write_run(dir, stamp: "20260101-000001")
@@ -79,12 +131,14 @@ module Analysis
         first = Importer.new(path).import
         levels = first.level_stats.count
         samples = first.server_samples.count
+        throughput = first.throughput_samples.count
 
         second = Importer.new(path).import
 
         assert_equal first.id, second.id
         assert_equal levels, second.level_stats.count
         assert_equal samples, second.server_samples.count
+        assert_equal throughput, second.throughput_samples.count
       end
     end
 

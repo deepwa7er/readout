@@ -14,11 +14,28 @@ module Analysis
     end
 
     Level = Struct.new(
-      :vus, :window_seconds, :sample_count,
+      :vus, :window_seconds, :sample_count, :request_count,
       :latencies, :requests_per_second, :megabytes_per_second,
       :error_count, :cpu_avg_pct, :cpu_peak_pct,
       keyword_init: true
-    )
+    ) do
+      # A plateau nothing was asked of.
+      #
+      # Every VU-based scenario ends with `gracefulRampDown` and `gracefulStop`,
+      # so a handful of stragglers finishing their last session can sit at a
+      # constant two or three VUs for well over the minimum hold — long enough to
+      # look exactly like a level. It is not one: no request completed during it.
+      #
+      # Left in, it becomes a point at (2 people, 0 req/s) that the chart draws a
+      # line up from, turning the dying tail of a run into an apparent load
+      # curve, and it feeds the same fiction to #knee and #breaking_point.
+      #
+      # A stalled server is not caught by this: k6 records an http_reqs sample
+      # for a request that failed or timed out just as it does for one that
+      # succeeded, so a level under a server that has stopped answering still
+      # counts requests. Zero here means nothing was even being attempted.
+      def idle? = request_count.to_f.zero?
+    end
 
     def initialize(metrics, server_trace = nil)
       @metrics = metrics
@@ -61,8 +78,10 @@ module Analysis
         .sort
     end
 
+    # The levels the run actually held under load. See Level#idle? for why a
+    # plateau with no traffic in it is dropped rather than reported.
     def levels
-      plateau_levels.filter_map { |vus| level_for(vus) }
+      plateau_levels.filter_map { |vus| level_for(vus) }.reject(&:idle?)
     end
 
     private
@@ -94,12 +113,15 @@ module Analysis
         latencies[attribute] = Percentile.of(values, 95)
       end
 
+      requests = counter_sum("http_reqs", window)
+
       Level.new(
         vus: vus,
         window_seconds: span,
         sample_count: sample_count,
+        request_count: requests,
         latencies: latencies,
-        requests_per_second: counter_sum("http_reqs", window) / span,
+        requests_per_second: requests / span,
         megabytes_per_second: counter_sum("data_received", window) / span / 1_048_576.0,
         error_count: counter_sum("campfire_errors", window).round,
         cpu_avg_pct: @server_trace&.average_cpu(window),

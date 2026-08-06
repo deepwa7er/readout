@@ -63,7 +63,12 @@ module Analysis
         "campfire_room_open" => [ sample(5, 5000.0) ] + (30..100).map { |t| sample(t, 100.0) }
       }
 
-      breakdown = LevelBreakdown.new(FakeMetrics.new(timeline, latencies))
+      # Requests alongside, as k6 always records them: a latency sample is a
+      # measurement OF a request, so a window holding one and not the other does
+      # not occur. Without them the level would be dropped as idle.
+      counters = { "http_reqs" => (0..100).map { |t| sample(t, 1.0) } }
+
+      breakdown = LevelBreakdown.new(FakeMetrics.new(timeline, latencies, counters))
       level = breakdown.levels.first
 
       assert_equal 25, level.vus
@@ -80,6 +85,24 @@ module Analysis
 
       assert_equal 75, level.window_seconds
       assert_in_delta 1.0, level.requests_per_second, 0.05
+    end
+
+    # The bug this guards: gracefulRampDown and gracefulStop leave a few VUs
+    # finishing their last session for a minute after the run is over. That is a
+    # constant VU count held well past the minimum, so it looked exactly like a
+    # level -- and being a level at zero throughput, it drew a load curve rising
+    # out of the run's own dying tail.
+    test "a plateau with no traffic in it is not a level" do
+      timeline = []
+      (0..100).each { |t| timeline << [ t, 500 ] }      # the run
+      (101..180).each { |t| timeline << [ t, 2 ] }      # stragglers leaving
+
+      # Requests stop when the run does, which is what makes the tail idle.
+      counters = { "http_reqs" => (0..100).map { |t| sample(t, 1.0) } }
+      breakdown = LevelBreakdown.new(FakeMetrics.new(timeline, {}, counters))
+
+      assert_equal [ 2, 500 ], breakdown.plateau_levels, "both are plateaus by duration"
+      assert_equal [ 500 ], breakdown.levels.map(&:vus), "only one of them saw traffic"
     end
 
     test "reports no levels when nothing was held long enough" do

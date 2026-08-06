@@ -68,10 +68,20 @@ module Analysis
         # stale levels behind whenever the segmentation rules change.
         run.level_stats.delete_all
         run.server_samples.delete_all
+        run.throughput_samples.delete_all
 
         breakdown.levels.each { |level| persist_level(run, level) }
         persist_trace(run, trace, window)
+        persist_throughput(run, metrics, window)
       end
+
+      # The sample tables are written with insert_all, which goes straight to the
+      # database and past the associations this method emptied a moment earlier.
+      # Without resetting them, the run handed back reports no samples at all
+      # while the rows sit there in the table.
+      run.level_stats.reset
+      run.server_samples.reset
+      run.throughput_samples.reset
 
       run
     end
@@ -110,6 +120,37 @@ module Analysis
         cpu_peak_pct: level.cpu_peak_pct,
         **level.latencies
       )
+    end
+
+    # Requests completed per second, for the whole run.
+    #
+    # This is what a single-level run can be charted against: chat and enterprise
+    # runs hold one population from start to finish, so throughput against load
+    # is a single point and only throughput against time has a shape. k6 stamps
+    # every sample to the whole second, which is exactly the resolution wanted
+    # here, so the series is a tally rather than a rolling window.
+    #
+    # Every second in the run's window gets a row, including the ones nothing
+    # completed in. See ThroughputSample for why a zero is not the same as a gap.
+    def persist_throughput(run, metrics, window)
+      return if window.nil?
+
+      completed = Hash.new(0.0)
+      metrics.counter_samples["http_reqs"].each do |sample|
+        completed[sample.at] += sample.value if window.cover?(sample.at)
+      end
+
+      rows = window.map do |second|
+        {
+          run_id: run.id,
+          at: Time.zone.at(second),
+          requests: completed[second].round,
+          created_at: Time.current,
+          updated_at: Time.current
+        }
+      end
+
+      ThroughputSample.insert_all(rows) if rows.any?
     end
 
     def persist_trace(run, trace, window)

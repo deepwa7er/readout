@@ -71,6 +71,22 @@
       under spread the WAL should stay small if SQLite is no longer the ceiling.
     </p>
 
+    <p class="finding-body measure muted" id="desc-enterprise-shape" style="<%= @scenario == "chat" ? "display:none" : "" %>">
+      Unlike the hot-room test, this one ramps: employees arrive over
+      <%= TestRunsController::ENTERPRISE_RAMP_UP_SECONDS %> seconds, stay for
+      <%= TestRunsController::ENTERPRISE_HOLD_SECONDS / 60 %> minutes, then leave
+      over <%= TestRunsController::ENTERPRISE_RAMP_DOWN_SECONDS %> seconds —
+      about
+      <%= number_with_precision(
+            (TestRunsController::ENTERPRISE_RAMP_UP_SECONDS +
+             TestRunsController::ENTERPRISE_HOLD_SECONDS +
+             TestRunsController::ENTERPRISE_RAMP_DOWN_SECONDS) / 60.0,
+            precision: 1
+          ) %>
+      minutes in total. Only the hold is measured as a level; the ramps are
+      transition.
+    </p>
+
     <p class="finding-body measure muted" id="desc-chat-detail" style="<%= @scenario == "enterprise" ? "display:none" : "" %>">
       Everyone joins the same room, holds a live connection, and posts a message
       about every <%= TestRunsController::MESSAGE_INTERVAL_SECONDS %> seconds.
@@ -99,6 +115,7 @@
       var descChat = document.getElementById("desc-chat");
       var descChatDetail = document.getElementById("desc-chat-detail");
       var descEnterprise = document.getElementById("desc-enterprise");
+      var descEnterpriseShape = document.getElementById("desc-enterprise-shape");
       function sync() {
         var isEnterprise = enterprise.checked;
         fieldChat.style.display = isEnterprise ? "none" : "";
@@ -106,6 +123,7 @@
         descChatDetail.style.display = isEnterprise ? "none" : "";
         fieldEnterprise.style.display = isEnterprise ? "" : "none";
         descEnterprise.style.display = isEnterprise ? "" : "none";
+        descEnterpriseShape.style.display = isEnterprise ? "" : "none";
       }
       if (chat && enterprise) {
         chat.addEventListener("change", sync);

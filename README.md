@@ -268,6 +268,24 @@ silently deflates throughput. There is a test for this.
 **A settling quarter is trimmed** from the front of each level: a level just
 stepped into is still filling connection pools and warming caches.
 
+**A plateau with no traffic in it is not a level.** Every VU-based scenario ends
+with `gracefulRampDown` and `gracefulStop`, so a few stragglers finishing their
+last session hold a constant two or three VUs for longer than the minimum hold —
+long enough to look exactly like a level. Counted as one, it became a point at
+(2 people, 0 req/s) that the chart drew a line up from, turning the dying tail of
+a run into an apparent load curve. A level is dropped when nothing completed
+during it; a level whose requests all failed still counts, since k6 records those
+too.
+
+**A single-level run is charted against time, not against load.** `chat` and
+`enterprise` hold one population from start to finish, so throughput against
+people is one dot and nothing else — and a run cancelled before its level was
+held long enough had no points at all. Those runs are drawn against elapsed time
+instead, from a per-second series recorded at import (`ThroughputSample`). Only a
+run that genuinely visited two or more levels gets the curve. Seconds in which
+nothing completed are stored as zeros: unlike a latency mean, a rate really is
+zero when nothing finished, and a gap would hide a stall.
+
 **Charts are server-rendered SVG from Ruby**, not a JavaScript charting library.
 The data is already on the server and the charts are static; a chart library
 would mean a build step and a dependency for what amounts to a polyline. They
