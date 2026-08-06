@@ -6,6 +6,9 @@ Rails.application.routes.draw do
       # Rescanning the results directory is a state change, so it is a POST
       # rather than a link.
       post :import
+      get :compare
+      post :archive
+      post :restore
     end
   end
 

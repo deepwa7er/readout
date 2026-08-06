@@ -11,8 +11,28 @@
     <% if @results_available %>
       <%= button_to "Rescan results", import_runs_path, class: "button button--secondary" %>
     <% end %>
+    <% if @runs.length >= 2 %>
+      <%= link_to "Compare last two", compare_runs_path, class: "button button--secondary" %>
+    <% end %>
+    <% if @results_available %>
+      <% if @runs.any? %>
+        <%= button_to "Archive to cold storage", archive_runs_path, class: "button button--secondary", form: { data: { turbo_confirm: "Move #{@runs.length} runs to storage/archive and clear the live DB? Raw results/ stays on disk." } } %>
+      <% end %>
+      <% archive_count = Dir[Rails.root.join("storage", "archive", "readout-*.json")].length %>
+      <% if archive_count > 0 %>
+        <%= button_to "Restore latest archive", restore_runs_path, class: "button button--secondary", form: { data: { turbo_confirm: "Restore the most recent archive into the live DB?" } } %>
+        <span class="meta"><%= archive_count %> archived</span>
+      <% end %>
+    <% end %>
   </div>
 </header>
+
+<% if @runs.empty? && Dir[Rails.root.join("storage", "archive", "readout-*.json")].any? %>
+  <p class="empty-state">
+    Live DB is cold — <%= Dir[Rails.root.join("storage", "archive", "readout-*.json")].length %> archived dump(s) in <code>storage/archive/</code>.
+    Raw <code>results/</code> is still on disk. Use <em>Restore latest archive</em> or re-import from <code>results/</code>.
+  </p>
+<% end %>
 
 <% if @results_available %>
   <p class="meta">Campfire load tests · <%= @results_root %></p>

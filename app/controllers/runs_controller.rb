@@ -27,6 +27,33 @@ class RunsController < ApplicationController
     @run = Run.includes(:level_stats).find(params[:id])
   end
 
+  def compare
+    @runs = Run.newest_first.includes(:level_stats).limit(2).to_a
+
+    if @runs.length < 2
+      redirect_to runs_path, alert: "Need at least two runs to compare."
+      return
+    end
+
+    # Newest is first per scope, so b is newest, a is previous
+    @newest = @runs.first
+    @previous = @runs.second
+  end
+
+  def archive
+    manifest = ReadoutArchiver.cold_archive!
+    redirect_to runs_path, notice: "Archived #{manifest[:run_count]} runs to #{File.basename(manifest[:dump_path])} — live DB is now empty."
+  rescue ReadoutArchiver::ArchiveError => e
+    redirect_to runs_path, alert: e.message
+  end
+
+  def restore
+    manifest = ReadoutArchiver.restore_latest!
+    redirect_to runs_path, notice: "Restored #{manifest[:run_count]} runs from #{File.basename(manifest[:dump_path])}."
+  rescue ReadoutArchiver::ArchiveError => e
+    redirect_to runs_path, alert: e.message
+  end
+
   # Rescans the campfire-stress results directory and imports anything new,
   # re-importing existing runs in place so an analyzer change is picked up.
   def import
