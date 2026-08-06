@@ -61,6 +61,7 @@ export default class extends Controller {
     this.buffer = (this.fetchIntervalValue / 1000) * 1.75
     this.playhead = null
     this.lastFrameAt = performance.now()
+    this.reportedError = false
 
     this.resize = this.resize.bind(this)
     window.addEventListener("resize", this.resize)
@@ -179,9 +180,29 @@ export default class extends Controller {
     const delta = Math.min((now - this.lastFrameAt) / 1000, 0.1)
     this.lastFrameAt = now
 
-    this.advance(delta)
-    this.draw()
+    // The next frame is queued BEFORE this one is drawn, on purpose.
+    //
+    // Drawing used to be the last thing tick() did, so a throw inside draw()
+    // ended the loop for good: the canvas kept whatever was on it and never
+    // updated again. That failure is indistinguishable from a chart with no
+    // data -- the server, the payload and the markup are all healthy, and the
+    // frame just sits there. It is how a missing formatDelay presented for days,
+    // as "the top chart doesn't populate". A frame that fails is now one lost
+    // frame rather than the end of the animation.
     this.frame = requestAnimationFrame((next) => this.tick(next))
+
+    try {
+      this.advance(delta)
+      this.draw()
+    } catch (error) {
+      // Reported once. At 60fps an unhandled draw error would otherwise bury the
+      // console under thousands of copies of itself, and the one that matters is
+      // the first.
+      if (!this.reportedError) {
+        this.reportedError = true
+        console.error("coping-chart: a frame failed to draw", error)
+      }
+    }
   }
 
   // Moves the playhead forward in real time, correcting gently toward a fixed
@@ -327,6 +348,18 @@ export default class extends Controller {
         ? this.formatDelay(current)
         : `${current.toFixed(0)} messages per second`
     }
+  }
+
+  // The delay under the chart, said the way a person would say it.
+  //
+  // The unit changes with the size because the two ranges mean different things:
+  // under a second is a number of milliseconds nobody notices, and above it the
+  // conversation has stopped feeling live, which is a matter of seconds. Matches
+  // the y-axis, which switches units at the same point.
+  formatDelay(ms) {
+    return ms < 1000
+      ? `${Math.round(ms)} ms to arrive`
+      : `${(ms / 1000).toFixed(1)} seconds to arrive`
   }
 
   // Shades the area between delivered and needed: green where the server is
