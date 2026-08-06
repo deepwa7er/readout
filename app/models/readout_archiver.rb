@@ -29,7 +29,7 @@ class ReadoutArchiver
     # 1. Dump the live DB that ActiveRecord is actually using. Using the
     # sqlite3 CLI keeps the dump restorable even if the schema changes;
     # ActiveRecord's schema.rb does not contain data.
-    dump_ok = system("sqlite3", db_path, ".dump | gzip > #{dump_path}")
+    dump_ok = system("bash", "-lc", "sqlite3 #{db_path} .dump | gzip > #{dump_path}")
     raise ArchiveError, "Dump failed for #{db_path}" unless dump_ok && dump_path.exist? && dump_path.size.positive?
 
     # 2. Verify by restoring into a throwaway file and counting rows.
