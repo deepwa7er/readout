@@ -132,6 +132,7 @@ class TestRunsController < ApplicationController
   # Feeds the live chart. Carries the run's state too, so the chart knows when to
   # stop polling without a second request.
   def progress
+    response.headers["Cache-Control"] = "no-store"
     data = client.progress(params[:id]) || {}
     running = client.run(params[:id])["state"] == "running"
     render json: data.merge("running" => running)

@@ -1,3 +1,6 @@
+<% content_for :head do %>
+  <meta name="turbo-cache-control" content="no-preview">
+<% end %>
 <% content_for :title, "Readout — #{@run['id']}" %>
 
 <%= link_to "← All runs", runs_path, class: "back-link" %>
