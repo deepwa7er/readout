@@ -1,12 +1,24 @@
 Rails.application.routes.draw do
   root "runs#index"
 
-  resources :runs, only: %i[ index show ] do
+  # One address per run, live or finished: /runs/<stamp>.
+  #
+  # By stamp rather than by database id, because a run in flight has no row yet
+  # — rows appear at import — while the stamp already names the same run to the
+  # runner, to its results directory and to this database, and is stable across
+  # instances in a way ids are not.
+  resources :runs, only: %i[ index show ], param: :stamp do
     member do
-      # The stored series for this run's charts. Separate from the page for the
-      # same reason it is on a live run: the chart draws onto a canvas rather
-      # than being re-rendered as HTML.
+      # The series behind this run's charts: live from the runner while it is in
+      # flight, stored afterwards. Separate from the page because the chart
+      # draws onto a canvas rather than being re-rendered as HTML.
       get :progress
+
+      # State and the stop button, while the runner still knows this run.
+      # Polled, so it is a fragment rather than part of the page.
+      get :status
+      post :cancel
+      post :publish
     end
 
     collection do
@@ -19,19 +31,11 @@ Rails.application.routes.draw do
     end
   end
 
-  # Launching load tests via the local runner service. Available only where a
-  # runner is reachable; the deployed instance redirects away from these.
-  resources :test_runs, only: %i[ new create show ], path: "tests" do
-    member do
-      get :status
-      # JSON for the live chart. Separate from #status on purpose: the chart
-      # updates a canvas in place rather than being re-rendered as HTML, which is
-      # what keeps it from flickering.
-      get :progress
-      post :cancel
-      post :publish
-    end
-  end
+  # Launching a load test, and only that. Once a run exists it is a run like any
+  # other and lives at /runs/<stamp>, whether it is still going or long over.
+  # Available only where a runner is reachable; the deployed instance redirects
+  # away from this.
+  resources :test_runs, only: %i[ new create ], path: "tests"
 
   # Which build of Campfire the next test measures. A fragment rather than a
   # page: it lives inside the new-test form and is polled while a switch runs.

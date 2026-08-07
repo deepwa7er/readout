@@ -21,8 +21,8 @@
       and the same Campfire as the target, would each measure the other.
     </p>
     <div class="actions">
-      <%= link_to "Watch it", test_run_path(@active["id"]), class: "button" %>
-      <%= button_to "Stop it", cancel_test_run_path(@active["id"]), class: "button button--danger" %>
+      <%= link_to "Watch it", run_path(@active["id"]), class: "button" %>
+      <%= button_to "Stop it", cancel_run_path(@active["id"]), class: "button button--danger" %>
     </div>
   </section>
 <% else %>

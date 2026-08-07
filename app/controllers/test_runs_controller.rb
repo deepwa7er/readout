@@ -112,66 +112,14 @@ class TestRunsController < ApplicationController
       levers: levers.transform_values(&:to_s),
       note: params[:note]
     )
-    redirect_to test_run_path(run["id"])
+
+    # Straight to the run's own page, which is the same address it will keep
+    # once it has finished and been imported.
+    redirect_to run_path(run["id"])
   rescue Harness::Client::Busy => e
     redirect_to new_test_run_path, alert: e.message
   rescue Harness::Client::Error => e
     redirect_to new_test_run_path, alert: "Could not start the run: #{e.message}"
-  end
-
-  # The page shell. Its status fragment is loaded and refreshed by #status, so
-  # the log is not fetched here.
-  def show
-    @run = client.run(params[:id])
-  rescue Harness::Client::Error => e
-    redirect_to new_test_run_path, alert: e.message
-  end
-
-  # The polled fragment. Kept separate from #show so the page shell is not
-  # re-rendered every two seconds.
-  def status
-    @run = client.run(params[:id])
-    @log = client.log(params[:id])
-    render partial: "status", locals: { run: @run, log: @log }
-  rescue Harness::Client::Error => e
-    render plain: e.message, status: :service_unavailable
-  end
-
-  # Feeds the live chart. Carries the run's state too, so the chart knows when to
-  # stop polling without a second request.
-  def progress
-    response.headers["Cache-Control"] = "no-store"
-    data = client.progress(params[:id]) || {}
-    running = client.run(params[:id])["state"] == "running"
-    render json: data.merge("running" => running)
-  rescue Harness::Client::Error => e
-    render json: { error: e.message }, status: :service_unavailable
-  end
-
-  # Returns you to wherever you pressed Stop, since the button now appears on
-  # the index and the new-test page as well as the run's own page.
-  def cancel
-    client.cancel(params[:id])
-    redirect_back fallback_location: test_run_path(params[:id]), notice: "Load test stopped."
-  rescue Harness::Client::Error => e
-    redirect_back fallback_location: test_run_path(params[:id]), alert: e.message
-  end
-
-  # Ships a finished run's results into this dashboard.
-  #
-  # Delegated to the runner rather than imported directly: the results are CSV on
-  # the runner's disk, and this app is not necessarily on that machine. Asking the
-  # runner to publish works from either instance, which is what keeps this a
-  # single app rather than one that behaves differently depending on where it
-  # happens to be running.
-  #
-  # Runs publish themselves on completion, so this is the retry path.
-  def publish
-    client.publish(params[:id])
-    redirect_to test_run_path(params[:id]),
-      notice: "Publishing results — the dashboard will update shortly."
-  rescue Harness::Client::Error => e
-    redirect_to test_run_path(params[:id]), alert: e.message
   end
 
   private
