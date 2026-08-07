@@ -33,6 +33,11 @@ Rails.application.routes.draw do
     end
   end
 
+  # Which build of Campfire the next test measures. A fragment rather than a
+  # page: it lives inside the new-test form and is polled while a switch runs.
+  get "variant" => "variants#show", as: :variant
+  post "variant/:name/switch" => "variants#switch", as: :switch_variant
+
   # Returns 200 if the app boots with no exceptions.
   get "up" => "rails/health#show", as: :rails_health_check
 end

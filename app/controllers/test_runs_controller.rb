@@ -4,7 +4,7 @@
 # no k6 and no results directory, so offering a launch button there would be a
 # button that cannot work.
 class TestRunsController < ApplicationController
-  before_action :require_runner
+  include RunnerAccess
 
   # Two entry points from one form.
   #
@@ -176,10 +176,6 @@ class TestRunsController < ApplicationController
 
   private
 
-  def client
-    @client ||= Harness::Client.new
-  end
-
   def active_run
     health = client.health
     return nil if health.blank? || !health["busy"]
@@ -187,13 +183,5 @@ class TestRunsController < ApplicationController
     client.run(health["active_run"])
   rescue Harness::Client::Error
     nil
-  end
-
-  def require_runner
-    return if client.available?
-
-    redirect_to runs_path,
-      alert: "No runner is reachable. Load tests are launched from the machine " \
-             "running the harness — start it with `bin/runner` in campfire-stress."
   end
 end

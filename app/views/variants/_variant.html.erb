@@ -1,0 +1,81 @@
+<%# Which build of Campfire the next test will measure.
+
+    Separate from the launch form on purpose: a switch restarts the application
+    under test, so it begins with an empty page cache. Switch, throw away a
+    warm-up run, then start the run you mean to keep. %>
+
+<% current = data["current"] || {} %>
+<% state = data["state"] || {} %>
+<% switching = state["state"] == "switching" %>
+<% variants = data["variants"] || [] %>
+
+<%= turbo_frame_tag "server-variant" do %>
+  <div data-controller="poll" data-poll-active-value="<%= switching %>" data-poll-interval-value="3000">
+    <section class="verdict measure">
+      <% if switching %>
+        <strong>Switching the server to <%= state["target"] %>…</strong>
+        <p class="meta">
+          The app is being redeployed and restarted. A new build takes a few
+          minutes; a change of settings alone takes seconds. Tests cannot be
+          started until it finishes.
+        </p>
+
+      <% elsif current["variant"].blank? %>
+        <strong>The deployed server could not be read.</strong>
+        <p class="meta">
+          <%= data["current_error"].presence || "The machine under test did not answer." %>
+        </p>
+
+      <% else %>
+        <p style="margin: 0 0 0.25rem 0">
+          <span class="meta">Server under test</span><br>
+          <strong><%= current["variant"] %></strong>
+          <% if current["variant"] == "unknown" %>
+            <span class="figure--bad">— the running image does not match what was deployed from here</span>
+          <% end %>
+        </p>
+
+        <% described = variants.find { |v| v["name"] == current["variant"] } %>
+        <% if described %>
+          <p class="meta" style="margin: 0"><%= described["description"] %></p>
+        <% end %>
+
+        <p class="meta" style="margin: 0.5rem 0 0 0">
+          <code><%= current["image"] %></code>
+          <% if current["env"].present? %>
+            <br><code><%= current["env"] %></code>
+          <% end %>
+        </p>
+      <% end %>
+
+      <% if state["state"] == "failed" %>
+        <p class="finding-body figure--bad" style="margin-top: 0.75rem">
+          Switching to <%= state["target"] %> failed: <%= state["error"] %>
+        </p>
+      <% end %>
+
+      <% if error.present? %>
+        <p class="finding-body figure--bad" style="margin-top: 0.75rem"><%= error %></p>
+      <% end %>
+
+      <% unless switching %>
+        <div class="actions" style="margin-top: 0.75rem">
+          <% variants.reject { |v| v["name"] == current["variant"] }.each do |variant| %>
+            <%= button_to "Switch to #{variant['name']}",
+                  switch_variant_path(variant["name"]),
+                  class: "button button--secondary",
+                  form: { data: { turbo_confirm: "Switch the server to #{variant['name']}? This restarts Campfire, so the next run starts with a cold cache — take a warm-up run before the one you keep." } } %>
+          <% end %>
+        </div>
+
+        <% if variants.any? %>
+          <p class="meta" style="margin-top: 0.5rem">
+            <% variants.reject { |v| v["name"] == current["variant"] }.each do |variant| %>
+              <strong><%= variant["name"] %></strong> — <%= variant["description"] %><br>
+            <% end %>
+          </p>
+        <% end %>
+      <% end %>
+    </section>
+  </div>
+<% end %>
