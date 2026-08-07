@@ -1,62 +1,60 @@
-<% content_for :title, "Readout — #{@run.stamp}" %>
+<%# One page for a run, whether it is happening or happened.
+
+    A run in flight and the same run afterwards used to be two pages at two
+    addresses, reached different ways and behaving differently. They are one
+    thing. What differs is only how far along the run is:
+
+      in flight  — @live is the runner's record; the charts poll it, and the
+                   status frame carries the state and the stop button.
+      imported   — @run is the row; the charts read the payload stored with it,
+                   and the request figures only a finished run can offer appear
+                   underneath.
+
+    The window between the two — finished, still publishing — has @live and no
+    @run, and says so rather than pretending to be either. %>
+
+<% live = @live.present? %>
+<% stamp = @run&.stamp || @live["id"] %>
+
+<% if live %>
+  <%# A page that is still filling must not be restored from the back-forward
+      cache as a stale snapshot. %>
+  <% content_for :head do %>
+    <meta name="turbo-cache-control" content="no-preview">
+  <% end %>
+<% end %>
+
+<% content_for :title, "Readout — #{stamp}" %>
 
 <%= link_to "← All runs", runs_path, class: "back-link" %>
 
 <header class="page-header">
-  <h1><%= @run.stamp %></h1>
+  <h1><%= stamp %></h1>
 </header>
 
 <p class="meta">
-  <%= @run.scenario.to_s.sub("scenarios/", "").presence || "unknown scenario" %>
-  · <%= @run.variant_label %>
+  <% if live %>
+    <%= @live["scenario"] %>
+    <% if @live["note"].present? %> · <%= @live["note"] %><% end %>
+  <% else %>
+    <%= @run.scenario.to_s.sub("scenarios/", "").presence || "unknown scenario" %>
+    · <%= @run.variant_label %>
+  <% end %>
 </p>
 
 <h2>Settings</h2>
 
-<%= render "shared/settings", settings: @run.settings %>
+<%= render "shared/settings", settings: live ? @live["levers"].to_h : @run.settings %>
 
-<%# What the load was applied TO. Two runs are only comparable if this matches
-    or is deliberately different, and until it was recorded here that had to be
-    reconstructed from container timestamps afterwards. %>
-<h2>Server</h2>
-
-<dl class="settings">
-  <div>
-    <dt>variant</dt>
-    <dd><%= @run.variant_label %></dd>
-  </div>
-  <% if @run.server_image.present? %>
-    <div>
-      <dt>image</dt>
-      <dd><%= @run.server_image %></dd>
-    </div>
-  <% end %>
-  <% if @run.server_env.present? %>
-    <div>
-      <dt>settings</dt>
-      <dd><%= @run.server_env.split(",").join(" · ") %></dd>
-    </div>
-  <% end %>
-</dl>
-
-<% unless @run.variant_known? %>
-  <p class="finding-body measure muted">
-    This run does not name the server it measured, so it cannot be compared
-    against one that does. Runs record it from
-    <code>bin/campfire-variant</code> on the machine that generates the load;
-    runs from before that, or taken while the deployed image did not match the
-    recorded variant, say so here rather than guessing.
-  </p>
-<% end %>
-
-<%# The same two charts, in the same place, as the page for a run in flight —
-    this one drawn from the payload stored at import rather than polled from the
-    runner. A run is otherwise a different run depending on which page you
-    arrived by, which is what this fixes. %>
-<% if @run.progress %>
+<%# The charts are the same two in both states, drawn by the same code from the
+    same shape of payload — polled from the runner while the run is in flight,
+    read from the row afterwards. They sit OUTSIDE the status frame below: that
+    frame swaps its contents every couple of seconds, and a canvas rebuilt that
+    often flickers. %>
+<% if live || @run.progress %>
   <%= render "shared/coping_charts",
-        progress_url: progress_run_path(@run, format: :json),
-        live: false %>
+        progress_url: progress_run_path(stamp, format: :json),
+        live: live %>
 <% else %>
   <p class="finding-body measure muted">
     <strong>No delivery charts for this run.</strong> They are computed from k6's
@@ -67,62 +65,103 @@
   </p>
 <% end %>
 
-<h2>Requests</h2>
-
-<dl class="settings">
-  <div>
-    <dt>Received</dt>
-    <dd><%= request_count_figure(@run.total_requests) %></dd>
-  </div>
-  <div>
-    <dt>Never answered</dt>
-    <dd><%= unanswered_figure(@run) %></dd>
-  </div>
-</dl>
-
-<p class="finding-body measure muted">
-  <strong>Received</strong> is every request the harness sent during the run,
-  including the ones it sent while people were still arriving.
-  <strong>Never answered</strong> counts the ones Campfire produced no response
-  for at all — the connection failed, or the proxy in front of it gave up
-  waiting and answered with a gateway error on its behalf. A 404 or a 500 is
-  <em>not</em> counted here: those are the application responding, and a server
-  that refuses is telling you something different from one that goes quiet.
-</p>
-
-<h2>Requests per second</h2>
-
-<%# Two charts of the same measure, and which one a run gets is decided by the
-    run rather than by preference. Against load it needs several levels to be a
-    curve; a run that holds one population has one point, and its shape is over
-    time. See Run#load_curve?. %>
-<% if @run.load_curve? %>
-  <%= throughput_by_load_chart(@run) %>
-
-  <p class="finding-body measure muted">
-    <strong>Requests per second</strong> is how many actions the server finished
-    each second — opening a room, loading older messages, sending a message.
-    Higher is better.
-    <strong>People at once</strong> is how many simulated users were browsing
-    simultaneously. If the line stops rising as people are added, the server has
-    reached as much work as it can do.
-  </p>
-<% elsif (over_time = throughput_over_time_chart(@run)) %>
-  <%= over_time %>
-
-  <p class="finding-body measure muted">
-    <strong>Requests per second</strong> is how many actions the server finished
-    each second — opening a room, loading older messages, sending a message.
-    This run held one load level from start to finish, so it is drawn against
-    time rather than against people: the opening burst is everyone arriving, and
-    what matters after that is whether the line holds steady or sags as the
-    server falls behind.
-    <% if (level = @run.level_stats.first) %>
-      It was measured at <strong><%= level.vus %></strong> people at once.
-    <% end %>
-  </p>
+<% if live %>
+  <%# Status and the stop button only. Everything else that used to live on the
+      live page has been removed deliberately. %>
+  <%= turbo_frame_tag "run-status", src: status_run_path(stamp), loading: :eager do %>
+    <p class="muted">Loading…</p>
+  <% end %>
 <% else %>
-  <p class="muted measure">
-    This run did not last long enough to record anything.
+  <h2>Server</h2>
+
+  <%# What the load was applied TO. Two runs are only comparable if this matches
+      or is deliberately different. %>
+  <dl class="settings">
+    <div>
+      <dt>variant</dt>
+      <dd><%= @run.variant_label %></dd>
+    </div>
+    <% if @run.server_image.present? %>
+      <div>
+        <dt>image</dt>
+        <dd><%= @run.server_image %></dd>
+      </div>
+    <% end %>
+    <% if @run.server_env.present? %>
+      <div>
+        <dt>settings</dt>
+        <dd><%= @run.server_env.split(",").join(" · ") %></dd>
+      </div>
+    <% end %>
+  </dl>
+
+  <% unless @run.variant_known? %>
+    <p class="finding-body measure muted">
+      This run does not name the server it measured, so it cannot be compared
+      against one that does. Runs record it from
+      <code>bin/campfire-variant</code> on the machine that generates the load;
+      runs from before that, or taken while the deployed image did not match the
+      recorded variant, say so here rather than guessing.
+    </p>
+  <% end %>
+
+  <h2>Requests</h2>
+
+  <dl class="settings">
+    <div>
+      <dt>Received</dt>
+      <dd><%= request_count_figure(@run.total_requests) %></dd>
+    </div>
+    <div>
+      <dt>Never answered</dt>
+      <dd><%= unanswered_figure(@run) %></dd>
+    </div>
+  </dl>
+
+  <p class="finding-body measure muted">
+    <strong>Received</strong> is every request the harness sent during the run,
+    including the ones it sent while people were still arriving.
+    <strong>Never answered</strong> counts the ones Campfire produced no response
+    for at all — the connection failed, or the proxy in front of it gave up
+    waiting and answered with a gateway error on its behalf. A 404 or a 500 is
+    <em>not</em> counted here: those are the application responding, and a server
+    that refuses is telling you something different from one that goes quiet.
   </p>
+
+  <h2>Requests per second</h2>
+
+  <%# Two charts of the same measure, and which one a run gets is decided by the
+      run rather than by preference. Against load it needs several levels to be a
+      curve; a run that holds one population has one point, and its shape is over
+      time. See Run#load_curve?. %>
+  <% if @run.load_curve? %>
+    <%= throughput_by_load_chart(@run) %>
+
+    <p class="finding-body measure muted">
+      <strong>Requests per second</strong> is how many actions the server finished
+      each second — opening a room, loading older messages, sending a message.
+      Higher is better.
+      <strong>People at once</strong> is how many simulated users were browsing
+      simultaneously. If the line stops rising as people are added, the server has
+      reached as much work as it can do.
+    </p>
+  <% elsif (over_time = throughput_over_time_chart(@run)) %>
+    <%= over_time %>
+
+    <p class="finding-body measure muted">
+      <strong>Requests per second</strong> is how many actions the server finished
+      each second — opening a room, loading older messages, sending a message.
+      This run held one load level from start to finish, so it is drawn against
+      time rather than against people: the opening burst is everyone arriving, and
+      what matters after that is whether the line holds steady or sags as the
+      server falls behind.
+      <% if (level = @run.level_stats.first) %>
+        It was measured at <strong><%= level.vus %></strong> people at once.
+      <% end %>
+    </p>
+  <% else %>
+    <p class="muted measure">
+      This run did not last long enough to record anything.
+    </p>
+  <% end %>
 <% end %>

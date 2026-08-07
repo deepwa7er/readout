@@ -1,0 +1,40 @@
+<%# Deliberately minimal: whether it is still going, and the means to stop it.
+    The charts above carry the actual result. %>
+<%= turbo_frame_tag "run-status" do %>
+  <div data-controller="poll"
+       data-poll-active-value="<%= run["state"] == "running" || run["publish_state"] == "publishing" %>">
+    <p class="meta">
+      <%= run["state"] %>
+      <% if run["state"] == "running" %>
+        · started <%= time_ago_in_words(Time.parse(run["started_at"])) %> ago
+      <% elsif run["finished_at"].present? %>
+        · took <%= distance_of_time_in_words(Time.parse(run["started_at"]), Time.parse(run["finished_at"])) %>
+      <% end %>
+    </p>
+
+    <% if run["publish_state"] == "failed" %>
+      <p class="muted measure figure--bad">Saving the results failed: <%= run["publish_error"] %></p>
+    <% end %>
+
+    <div class="actions">
+      <% if run["state"] == "running" %>
+        <%= button_to "Stop", cancel_run_path(run["id"]), class: "button button--danger" %>
+      <% else %>
+        <%# The results have landed, so this page has more to say than it is
+            showing: the same address now has the imported run behind it, with
+            the request figures and the throughput chart. Offered as a link
+            rather than reloading automatically — a page that reloaded itself
+            whenever the runner said "published" would loop forever if the
+            import ever failed to produce a row. %>
+        <% if run["publish_state"] == "published" %>
+          <%= link_to "Open the full report", run_path(run["id"]), class: "button" %>
+        <% elsif run["publish_state"] == "publishing" %>
+          <p class="muted">Saving the results…</p>
+        <% else %>
+          <%= button_to "Save the results", publish_run_path(run["id"]), class: "button" %>
+        <% end %>
+        <%= link_to "New test", new_test_run_path, class: "button button--secondary" %>
+      <% end %>
+    </div>
+  </div>
+<% end %>

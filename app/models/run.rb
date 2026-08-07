@@ -13,6 +13,12 @@ class Run < ApplicationRecord
 
   validates :stamp, presence: true, uniqueness: true
 
+  # Runs are addressed by stamp everywhere: it is what the runner calls this
+  # run, what its results directory is named, and what survives the database
+  # being replaced wholesale by bin/publish. A database id means nothing outside
+  # the instance that assigned it, and a run in flight does not have one yet.
+  def to_param = stamp
+
   scope :newest_first, -> { order(started_at: :desc, stamp: :desc) }
 
   def settings
