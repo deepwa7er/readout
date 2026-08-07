@@ -22,8 +22,9 @@ class RunsFlowTest < ActionDispatch::IntegrationTest
     assert_select ".run-title", text: "20260101-120000"
   end
 
-  # The results page is deliberately minimal: name, settings, and one chart of
-  # requests per second. Everything else was removed on purpose.
+  # The results page is deliberately minimal: name, settings, the two charts a
+  # run in flight shows, and the request figures only a finished run can offer.
+  # Everything else was removed on purpose.
   test "show is the name, the settings, and the throughput chart" do
     get run_path(@run)
 
@@ -84,6 +85,55 @@ class RunsFlowTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "svg", false
     assert_select "p", /did not last long enough/
+  end
+
+  # The bug this pair exists to keep fixed: a run looked like two different runs
+  # depending on whether you arrived from the run list or from having just
+  # launched it. The launched view is the one that is right, so the historical
+  # page draws the same two charts, from the payload the runner computed.
+  test "a finished run carries the same two charts as a run in flight" do
+    @run.create_progress!(payload: { "deliveries" => [ { "t" => 1, "v" => 40 } ], "duration_s" => 60 })
+
+    get run_path(@run)
+
+    assert_response :success
+    assert_select "h2", text: "How long a message takes to arrive"
+    assert_select "h2", text: "Messages delivered per second"
+    assert_select "[data-coping-chart-url-value=?]", progress_run_path(@run, format: :json), count: 2
+
+    # Nothing more is coming, so the chart is told not to poll for it.
+    assert_select "[data-coping-chart-live-value=false]", count: 2
+  end
+
+  test "the stored series are served in the shape the chart reads" do
+    @run.create_progress!(payload: { "deliveries" => [ { "t" => 1, "v" => 40 } ], "duration_s" => 60 })
+
+    get progress_run_path(@run, format: :json)
+
+    assert_response :success
+    payload = response.parsed_body
+    assert_equal [ { "t" => 1, "v" => 40 } ], payload["deliveries"]
+    assert_equal 60, payload["duration_s"]
+    assert_equal false, payload["running"], "a finished run's line must be drawn to its end"
+  end
+
+  # Runs imported before the runner saved its payload have no series at all, and
+  # cannot get them from here — the raw output is on the machine that generated
+  # the load. Saying so beats an empty frame, which reads as a run in which
+  # nothing happened.
+  test "a run with no stored series says so instead of drawing an empty chart" do
+    get run_path(@run)
+
+    assert_response :success
+    assert_select "canvas", false
+    assert_select "p", /No delivery charts for this run/
+    assert_select "p", /rebuild-progress/
+  end
+
+  test "asking for series a run does not have is a not-found rather than an empty chart" do
+    get progress_run_path(@run, format: :json)
+
+    assert_response :not_found
   end
 
   test "import reports a missing results directory instead of failing silently" do

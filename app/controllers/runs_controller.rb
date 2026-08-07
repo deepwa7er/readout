@@ -27,6 +27,23 @@ class RunsController < ApplicationController
     @run = Run.includes(:level_stats).find(params[:id])
   end
 
+  # Feeds this run's charts, in the shape the runner serves live — because it is
+  # the runner's own payload, stored at import. See RunProgress.
+  def progress
+    stored = Run.find(params[:id]).progress
+
+    # A run imported before the runner wrote its payload. The page checks for
+    # this too and says so in words rather than rendering an empty frame; this
+    # is the answer for anything that asks anyway.
+    return head :not_found if stored.nil?
+
+    # Nothing more is coming. The live chart holds its line a fraction of a
+    # second behind the newest point so it has something to reveal at frame
+    # rate; told the run is over, it closes that gap and finishes where the data
+    # does.
+    render json: stored.payload.merge("running" => false)
+  end
+
   def compare
     @runs = Run.newest_first.includes(:level_stats).limit(2).to_a
 

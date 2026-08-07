@@ -8,6 +8,9 @@ class Run < ApplicationRecord
   has_many :server_samples, -> { order(:at) }, dependent: :delete_all
   has_many :throughput_samples, -> { order(:at) }, dependent: :delete_all
 
+  # The live charts' series, kept out of every list query: see RunProgress.
+  has_one :progress, class_name: "RunProgress", dependent: :delete
+
   validates :stamp, presence: true, uniqueness: true
 
   scope :newest_first, -> { order(started_at: :desc, stamp: :desc) }

@@ -12,20 +12,25 @@
 
 <h2>Settings</h2>
 
-<dl class="settings">
-  <% if @run.settings.blank? %>
-    <div>
-      <dt>defaults</dt>
-      <dd>nothing overridden</dd>
-    </div>
-  <% end %>
-  <% @run.settings.each do |key, value| %>
-    <div>
-      <dt><%= lever_label(key) %></dt>
-      <dd><%= value %></dd>
-    </div>
-  <% end %>
-</dl>
+<%= render "shared/settings", settings: @run.settings %>
+
+<%# The same two charts, in the same place, as the page for a run in flight —
+    this one drawn from the payload stored at import rather than polled from the
+    runner. A run is otherwise a different run depending on which page you
+    arrived by, which is what this fixes. %>
+<% if @run.progress %>
+  <%= render "shared/coping_charts",
+        progress_url: progress_run_path(@run, format: :json),
+        live: false %>
+<% else %>
+  <p class="finding-body measure muted">
+    <strong>No delivery charts for this run.</strong> They are computed from k6's
+    sub-second output on the machine that generated the load, and this run was
+    imported before that payload was being saved. Run
+    <code>bin/runner --rebuild-progress</code> there and publish again to fill
+    them in.
+  </p>
+<% end %>
 
 <h2>Requests</h2>
 
