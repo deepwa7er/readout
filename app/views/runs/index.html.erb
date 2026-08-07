@@ -61,6 +61,11 @@
 
         <p class="meta">
           <%= run.scenario.to_s.sub("scenarios/", "").presence || "unknown scenario" %>
+          <%# Which server each run measured, so a list of runs can be read as
+              an experiment rather than a pile of numbers. %>
+          <% if run.variant_known? %>
+            · <%= run.variant %>
+          <% end %>
           <% if run.peak_vus %>
             · peak <%= run.peak_vus %> vus
           <% end %>

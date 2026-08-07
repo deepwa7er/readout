@@ -136,6 +136,31 @@ class RunsFlowTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "a run names the server it measured, on its page and in the list" do
+    @run.update!(
+      variant: "tuned",
+      server_image: "localhost:5000/campfire:6d2cf0a",
+      server_env: "CAMPFIRE_BATCH_UNREAD=1,RAILS_ENV=performance"
+    )
+
+    get run_path(@run)
+    assert_select "h2", text: "Server"
+    assert_select ".settings dd", text: "tuned"
+    assert_select ".settings dd", text: "localhost:5000/campfire:6d2cf0a"
+
+    get runs_path
+    assert_select ".run .meta", /tuned/
+  end
+
+  # Saying so beats implying a comparison the run cannot support.
+  test "a run with no recorded server says so rather than looking comparable" do
+    get run_path(@run)
+
+    assert_response :success
+    assert_select ".settings dd", text: "server not recorded"
+    assert_select "p", /cannot be compared against one that does/
+  end
+
   test "import reports a missing results directory instead of failing silently" do
     original = Rails.configuration.x.campfire_stress.results_root
     Rails.configuration.x.campfire_stress.results_root = "/nonexistent/path"

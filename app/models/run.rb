@@ -25,6 +25,25 @@ class Run < ApplicationRecord
     level_stats.maximum(:vus)
   end
 
+  # Whether this run can say which server it measured.
+  #
+  # Three states, and collapsing them would be a lie in both directions: a name
+  # means the harness read it off the box, "unknown" means it looked and could
+  # not tell, and nil means the run predates recording it at all. Only the first
+  # can carry a comparison.
+  UNKNOWN_VARIANT = "unknown".freeze
+
+  def variant_known?
+    variant.present? && variant != UNKNOWN_VARIANT
+  end
+
+  def variant_label
+    return variant if variant_known?
+    return "server unidentified" if variant == UNKNOWN_VARIANT
+
+    "server not recorded"
+  end
+
   # Whether this run visited more than one load level, i.e. whether there is a
   # curve to plot throughput against.
   #
