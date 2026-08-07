@@ -8,11 +8,46 @@
 
 <p class="meta">
   <%= @run.scenario.to_s.sub("scenarios/", "").presence || "unknown scenario" %>
+  · <%= @run.variant_label %>
 </p>
 
 <h2>Settings</h2>
 
 <%= render "shared/settings", settings: @run.settings %>
+
+<%# What the load was applied TO. Two runs are only comparable if this matches
+    or is deliberately different, and until it was recorded here that had to be
+    reconstructed from container timestamps afterwards. %>
+<h2>Server</h2>
+
+<dl class="settings">
+  <div>
+    <dt>variant</dt>
+    <dd><%= @run.variant_label %></dd>
+  </div>
+  <% if @run.server_image.present? %>
+    <div>
+      <dt>image</dt>
+      <dd><%= @run.server_image %></dd>
+    </div>
+  <% end %>
+  <% if @run.server_env.present? %>
+    <div>
+      <dt>settings</dt>
+      <dd><%= @run.server_env.split(",").join(" · ") %></dd>
+    </div>
+  <% end %>
+</dl>
+
+<% unless @run.variant_known? %>
+  <p class="finding-body measure muted">
+    This run does not name the server it measured, so it cannot be compared
+    against one that does. Runs record it from
+    <code>bin/campfire-variant</code> on the machine that generates the load;
+    runs from before that, or taken while the deployed image did not match the
+    recorded variant, say so here rather than guessing.
+  </p>
+<% end %>
 
 <%# The same two charts, in the same place, as the page for a run in flight —
     this one drawn from the payload stored at import rather than polled from the

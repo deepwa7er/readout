@@ -172,6 +172,62 @@ module Analysis
       end
     end
 
+    # What the load was applied to. A run that cannot name its server cannot be
+    # compared against one that can, so this is imported as data rather than
+    # left to be reconstructed from container timestamps afterwards.
+    test "records the server variant the run measured" do
+      Dir.mktmpdir do |dir|
+        path = write_run(dir, stamp: "20260101-000012")
+        File.open(File.join(path, "run-config.txt"), "a") do |file|
+          file.puts "variant=tuned"
+          file.puts "server_image=localhost:5000/campfire:6d2cf0a"
+          file.puts "server_digest=sha256:b31e9f2a"
+          file.puts "server_env=CAMPFIRE_BATCH_UNREAD=1,RAILS_ENV=performance"
+        end
+
+        run = Importer.new(path).import
+
+        assert_equal "tuned", run.variant
+        assert run.variant_known?
+        assert_equal "localhost:5000/campfire:6d2cf0a", run.server_image
+        assert_equal "CAMPFIRE_BATCH_UNREAD=1,RAILS_ENV=performance", run.server_env
+      end
+    end
+
+    # The server description is not a lever. Listing it among the settings would
+    # read as something that was asked of the load.
+    test "server fields do not leak into the run's settings" do
+      Dir.mktmpdir do |dir|
+        path = write_run(dir, stamp: "20260101-000013")
+        File.open(File.join(path, "run-config.txt"), "a") do |file|
+          file.puts "variant=stock"
+          file.puts "server_env=RAILS_ENV=performance"
+        end
+
+        run = Importer.new(path).import
+
+        assert_equal({ "USER_POOL" => "800" }, run.settings)
+      end
+    end
+
+    # Two states that must not collapse into each other: a run from before this
+    # was recorded, and one where the harness looked and could not tell.
+    test "a run that could not identify its server is not treated as one that can" do
+      Dir.mktmpdir do |dir|
+        old = Importer.new(write_run(dir, stamp: "20260101-000014")).import
+        assert_nil old.variant
+        assert_not old.variant_known?
+        assert_equal "server not recorded", old.variant_label
+
+        path = write_run(dir, stamp: "20260101-000015")
+        File.open(File.join(path, "run-config.txt"), "a") { |f| f.puts "variant=unknown" }
+        unidentified = Importer.new(path).import
+
+        assert_not unidentified.variant_known?
+        assert_equal "server unidentified", unidentified.variant_label
+      end
+    end
+
     test "only settings explicitly set for the run are kept" do
       Dir.mktmpdir do |dir|
         write_run(dir, stamp: "20260101-000001")

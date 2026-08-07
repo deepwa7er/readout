@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_07_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_07_220000) do
   create_table "level_stats", force: :cascade do |t|
     t.float "cable_subscribe_p95"
     t.float "cpu_avg_pct"
@@ -50,6 +50,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_07_130000) do
     t.float "peak_cpu_pct"
     t.integer "peak_wal_bytes"
     t.string "scenario"
+    t.string "server_digest"
+    t.string "server_env"
+    t.string "server_image"
     t.string "stamp"
     t.datetime "started_at"
     t.string "target"
@@ -57,7 +60,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_07_130000) do
     t.integer "total_requests"
     t.integer "unanswered_requests"
     t.datetime "updated_at", null: false
+    t.string "variant"
     t.index ["stamp"], name: "index_runs_on_stamp", unique: true
+    t.index ["variant"], name: "index_runs_on_variant"
   end
 
   create_table "server_samples", force: :cascade do |t|
