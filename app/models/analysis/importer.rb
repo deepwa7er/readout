@@ -10,11 +10,13 @@
 module Analysis
   class Importer
     class MissingMetrics < StandardError; end
+    class MalformedProgress < StandardError; end
 
-    METRICS_FILE = "metrics.csv"
-    SERVER_FILE  = "server.csv"
-    CONFIG_FILE  = "run-config.txt"
-    SUMMARY_FILE = "summary.json"
+    METRICS_FILE  = "metrics.csv"
+    SERVER_FILE   = "server.csv"
+    CONFIG_FILE   = "run-config.txt"
+    SUMMARY_FILE  = "summary.json"
+    PROGRESS_FILE = "progress.json"
 
     attr_reader :directory
 
@@ -69,10 +71,12 @@ module Analysis
         run.level_stats.delete_all
         run.server_samples.delete_all
         run.throughput_samples.delete_all
+        RunProgress.where(run: run).delete_all
 
         breakdown.levels.each { |level| persist_level(run, level) }
         persist_trace(run, trace, window)
         persist_throughput(run, metrics, window)
+        persist_progress(run)
       end
 
       # The sample tables are written with insert_all, which goes straight to the
@@ -82,15 +86,17 @@ module Analysis
       run.level_stats.reset
       run.server_samples.reset
       run.throughput_samples.reset
+      run.reload_progress
 
       run
     end
 
     private
 
-    def metrics_path = directory.join(METRICS_FILE)
-    def server_path  = directory.join(SERVER_FILE)
-    def config_path  = directory.join(CONFIG_FILE)
+    def metrics_path  = directory.join(METRICS_FILE)
+    def server_path   = directory.join(SERVER_FILE)
+    def config_path   = directory.join(CONFIG_FILE)
+    def progress_path = directory.join(PROGRESS_FILE)
 
     def stamp = directory.basename.to_s
 
@@ -151,6 +157,29 @@ module Analysis
       end
 
       ThroughputSample.insert_all(rows) if rows.any?
+    end
+
+    # The series the run's charts are drawn from, taken whole from the runner.
+    #
+    # Not computed here, and deliberately: they come from k6's JSON output at
+    # 33ms resolution, and the runner has already computed them once to feed the
+    # live chart. Parsing that file a second time in another language would put
+    # two implementations of the same arithmetic in the same product, which is
+    # exactly how the two views came to disagree. See RunProgress.
+    #
+    # Absent for runs that finished before the runner wrote this file. Those
+    # pages say so rather than drawing an empty chart; `bin/runner
+    # --rebuild-progress`, on the machine holding results/, is what fills them in.
+    def persist_progress(run)
+      return unless progress_path.exist?
+
+      RunProgress.create!(run: run, payload: JSON.parse(progress_path.read))
+    rescue JSON::ParserError => e
+      # Loud rather than skipped. The file is written atomically, so a
+      # half-written one means something is wrong with the run's output, and a
+      # page silently missing its charts is the failure this whole change exists
+      # to remove.
+      raise MalformedProgress, "#{progress_path} is not valid JSON: #{e.message}"
     end
 
     def persist_trace(run, trace, window)

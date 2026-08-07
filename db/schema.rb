@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_06_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_07_130000) do
   create_table "level_stats", force: :cascade do |t|
     t.float "cable_subscribe_p95"
     t.float "cpu_avg_pct"
@@ -29,6 +29,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_06_140000) do
     t.integer "vus"
     t.integer "window_seconds"
     t.index ["run_id"], name: "index_level_stats_on_run_id"
+  end
+
+  create_table "run_progresses", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.json "payload", null: false
+    t.integer "run_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["run_id"], name: "index_run_progresses_on_run_id", unique: true
   end
 
   create_table "runs", force: :cascade do |t|
@@ -75,6 +83,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_06_140000) do
   end
 
   add_foreign_key "level_stats", "runs"
+  add_foreign_key "run_progresses", "runs"
   add_foreign_key "server_samples", "runs"
   add_foreign_key "throughput_samples", "runs"
 end

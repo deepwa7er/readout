@@ -44,6 +44,11 @@ export default class extends Controller {
     // Milliseconds under which a message still feels immediate. Above this the
     // conversation stops feeling live.
     latencyGoal: { type: Number, default: 1000 },
+    // Whether the series is still being written. A finished run's payload is
+    // stored and never changes again, so its page fetches once and stops;
+    // polling it would be a request every couple of seconds, for the same
+    // bytes, for as long as the tab stayed open.
+    live: { type: Boolean, default: true },
     // Fetching faster buys nothing: it is a round trip to another machine, and
     // the series it returns is already dense.
     fetchInterval: { type: Number, default: 400 }
@@ -78,9 +83,12 @@ export default class extends Controller {
   }
 
   async fetchData() {
+    let loaded = false
+
     try {
       const response = await fetch(this.urlValue, { headers: { Accept: "application/json" }, cache: "no-store" })
       if (response.ok) {
+        loaded = true
         const payload = await response.json()
         if (this.seriesValue === "latency") {
           this.points = payload.delivery_latency || []
@@ -107,7 +115,14 @@ export default class extends Controller {
       // almost certainly succeed.
     }
 
-    const delay = this.running ? this.fetchIntervalValue : 2000
+    // One successful fetch is everything a finished run's page needs. A failed
+    // one still retries: giving up on a dropped request would leave the chart
+    // sitting on "waiting for the first second of data" for good.
+    if (loaded && !this.liveValue) return
+
+    // Retries on a page that is not live are paced gently — something is wrong
+    // with the request, and asking harder will not fix it.
+    const delay = this.liveValue && this.running ? this.fetchIntervalValue : 2000
     this.fetchTimer = setTimeout(() => this.fetchData(), delay)
   }
 

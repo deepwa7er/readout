@@ -2,6 +2,13 @@ Rails.application.routes.draw do
   root "runs#index"
 
   resources :runs, only: %i[ index show ] do
+    member do
+      # The stored series for this run's charts. Separate from the page for the
+      # same reason it is on a live run: the chart draws onto a canvas rather
+      # than being re-rendered as HTML.
+      get :progress
+    end
+
     collection do
       # Rescanning the results directory is a state change, so it is a POST
       # rather than a link.

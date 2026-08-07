@@ -115,6 +115,63 @@ module Analysis
       end
     end
 
+    # The series behind the run's charts, taken whole from the runner. They
+    # cannot be recomputed here — k6's sub-second output is 40-150MB per run and
+    # never leaves the machine that generated the load — so an import that
+    # dropped this file would leave the finished run's page unable to draw what
+    # its own live page had just drawn.
+    test "stores the runner's progress payload" do
+      Dir.mktmpdir do |dir|
+        path = write_run(dir, stamp: "20260101-000008")
+        File.write(File.join(path, "progress.json"),
+          '{"deliveries":[{"t":1,"v":40}],"duration_s":60,"dropped":0}')
+
+        run = Importer.new(path).import
+
+        assert_equal 60, run.progress.payload["duration_s"]
+        assert_equal [ { "t" => 1, "v" => 40 } ], run.progress.payload["deliveries"]
+      end
+    end
+
+    test "re-importing replaces the progress payload rather than duplicating it" do
+      Dir.mktmpdir do |dir|
+        path = write_run(dir, stamp: "20260101-000009")
+        File.write(File.join(path, "progress.json"), '{"duration_s":60}')
+        Importer.new(path).import
+
+        # A rebuilt payload — the arithmetic behind these series changed, and
+        # re-importing is how every run picks that up.
+        File.write(File.join(path, "progress.json"), '{"duration_s":165}')
+        run = Importer.new(path).import
+
+        assert_equal 1, RunProgress.where(run: run).count
+        assert_equal 165, run.progress.payload["duration_s"]
+      end
+    end
+
+    # Runs that finished before the runner wrote this file simply have none, and
+    # that must not stop them importing: everything else about them is still
+    # good, and their page says the charts are missing in words.
+    test "a run without a progress payload still imports" do
+      Dir.mktmpdir do |dir|
+        run = Importer.new(write_run(dir, stamp: "20260101-000010")).import
+
+        assert_nil run.progress
+        assert_equal 160, run.throughput_samples.count
+      end
+    end
+
+    # Written atomically by the runner, so a half-written one means something is
+    # wrong with the output rather than with the timing of this read.
+    test "a malformed progress payload is reported rather than skipped" do
+      Dir.mktmpdir do |dir|
+        path = write_run(dir, stamp: "20260101-000011")
+        File.write(File.join(path, "progress.json"), '{"deliveries":[{"t":1,')
+
+        assert_raises(Importer::MalformedProgress) { Importer.new(path).import }
+      end
+    end
+
     test "only settings explicitly set for the run are kept" do
       Dir.mktmpdir do |dir|
         write_run(dir, stamp: "20260101-000001")
