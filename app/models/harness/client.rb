@@ -63,6 +63,19 @@ module Harness
       body.to_s.dup.force_encoding(Encoding::UTF_8).scrub("")
     end
 
+    # Which builds of Campfire may be deployed, which one is deployed now, and
+    # whether a switch is under way. See campfire-stress/variants.json.
+    def variants
+      get("/variants")
+    end
+
+    # Deploys one of those builds. Returns as soon as the switch has started —
+    # it restarts a container and may build an image first, which is far longer
+    # than a request should hold, so the caller polls #variants for the outcome.
+    def switch_variant(name)
+      post("/variants/#{CGI.escape(name)}/switch", nil)
+    end
+
     def start(scenario:, levers: {}, note: nil)
       body = { scenario: scenario, levers: levers.compact_blank, note: note }
       post("/runs", body)

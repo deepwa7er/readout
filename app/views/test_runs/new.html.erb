@@ -6,6 +6,13 @@
   <h1>New load test</h1>
 </header>
 
+<%# What the next run will measure. Above the form rather than in it: a run and
+    the server it runs against are separate decisions, and switching restarts
+    Campfire — which a launch must never do as a side effect. %>
+<%= turbo_frame_tag "server-variant", src: variant_path, loading: :eager do %>
+  <p class="muted">Reading the deployed server…</p>
+<% end %>
+
 <% if @active %>
   <section class="verdict measure">
     <strong>A load test is already running.</strong>
