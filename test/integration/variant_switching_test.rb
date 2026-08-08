@@ -138,4 +138,95 @@ class VariantSwitchingTest < ActionDispatch::IntegrationTest
       assert_select "p", /runner unreachable/
     end
   end
+  # A switch is a build, a push, a redeploy and a health check, and the build
+  # alone can take minutes. "Switching…" on its own leaves you unable to tell
+  # working from hung.
+  test "a switch in progress reports the step it is on and how long it has run" do
+    mid_switch = DEPLOYED.merge("state" => {
+      "state" => "switching",
+      "target" => "tuned",
+      "step" => "building localhost:5000/campfire:6d2cf0a (a few minutes)",
+      "started_at" => 90.seconds.ago.iso8601
+    })
+
+    with_runner(FakeRunner.new(payload: mid_switch)) do
+      get variant_path
+
+      assert_select "strong", /Switching the server to tuned/
+      assert_select "p.meta", /building localhost:5000\/campfire/
+      assert_select "p.meta", /so far/
+      assert_select "[data-poll-active-value=true]", 1
+
+      # Nothing to press mid-switch: no second switch, and no launching either.
+      assert_select "form[action=?]", switch_variant_path("stock"), count: 0
+    end
+  end
+
+  test "a switch that has not printed anything yet still says it started" do
+    just_started = DEPLOYED.merge("state" => {
+      "state" => "switching", "target" => "tuned", "started_at" => 1.second.ago.iso8601
+    })
+
+    with_runner(FakeRunner.new(payload: just_started)) do
+      get variant_path
+
+      assert_select "strong", /Switching the server to tuned/
+      assert_select "p.meta", /starting…/
+    end
+  end
+
+  # Stopping saying "switching" is not the same as saying it worked.
+  test "a switch that just landed is confirmed" do
+    landed = DEPLOYED.merge(
+      "current" => DEPLOYED["current"].merge("variant" => "tuned"),
+      "state" => {
+        "state" => "idle",
+        "target" => "tuned",
+        "started_at" => 40.seconds.ago.iso8601,
+        "finished_at" => 8.seconds.ago.iso8601
+      }
+    )
+
+    with_runner(FakeRunner.new(payload: landed)) do
+      get variant_path
+
+      assert_select "strong", /Switched to tuned/
+      assert_select ".meta", /took/
+      assert_select ".meta", /warm-up run/
+      assert_select "[data-poll-active-value=false]", 1
+    end
+  end
+
+  # Left up for good it would become furniture, and a page that always says
+  # "switched to tuned" says nothing about whether this switch worked.
+  test "an old switch is not still being announced" do
+    stale = DEPLOYED.merge(
+      "current" => DEPLOYED["current"].merge("variant" => "tuned"),
+      "state" => {
+        "state" => "idle", "target" => "tuned",
+        "started_at" => 3.hours.ago.iso8601, "finished_at" => 3.hours.ago.iso8601
+      }
+    )
+
+    with_runner(FakeRunner.new(payload: stale)) do
+      get variant_path
+
+      assert_select "strong", { text: /Switched to tuned/, count: 0 }
+      assert_select "strong", text: "tuned"
+    end
+  end
+
+  test "a failed switch says how long it ran before it broke" do
+    failed = DEPLOYED.merge("state" => {
+      "state" => "failed", "target" => "tuned", "error" => "once update: hostname already in use",
+      "started_at" => 70.seconds.ago.iso8601, "finished_at" => 10.seconds.ago.iso8601
+    })
+
+    with_runner(FakeRunner.new(payload: failed)) do
+      get variant_path
+
+      assert_select ".figure--bad", /failed after/
+      assert_select ".figure--bad", /hostname already in use/
+    end
+  end
 end
