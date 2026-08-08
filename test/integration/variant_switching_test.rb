@@ -73,15 +73,23 @@ class VariantSwitchingTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "switching asks the runner and reports that it started" do
+  # Redirected rather than rendered, and that is the fix for a real bug:
+  # rendering the frame in response to the POST left its src pointing at this
+  # POST-only URL, so the next poll fetched it with GET, got a 404, and the
+  # frame read "Content missing" the moment the switch finished.
+  test "switching asks the runner and sends the frame back to an address it can poll" do
     runner = FakeRunner.new(payload: DEPLOYED.merge("state" => { "state" => "switching", "target" => "tuned" }))
 
     with_runner(runner) do
       post switch_variant_path("tuned")
 
-      assert_response :success
+      assert_redirected_to variant_path
+      assert_response :see_other
       assert_equal "tuned", runner.switched_to
+
+      follow_redirect!
       assert_select "strong", /Switching the server to tuned/
+      assert_select "[data-poll-url-value=?]", variant_path
     end
   end
 
@@ -98,7 +106,10 @@ class VariantSwitchingTest < ActionDispatch::IntegrationTest
     with_runner(runner) do
       post switch_variant_path("tuned")
 
-      assert_response :success
+      # Carried across the redirect by the flash, which the frame renders
+      # itself. It is only lost when a redirect lands somewhere the flash is
+      # drawn outside the frame.
+      follow_redirect!
       assert_select ".figure--bad", /a load test is running/
     end
   end

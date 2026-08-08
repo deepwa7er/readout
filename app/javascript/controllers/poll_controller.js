@@ -12,7 +12,15 @@ import { Controller } from "@hotwired/stimulus"
 export default class extends Controller {
   static values = {
     interval: { type: Number, default: 2000 },
-    active: Boolean
+    active: Boolean,
+    // The address this frame should keep asking for.
+    //
+    // Given explicitly because a frame's src is not stable: submitting a form
+    // inside a frame leaves src pointing at wherever that form went. For the
+    // variant switcher that was a POST-only URL, so the next poll fetched it
+    // with GET, got a 404, and the frame read "Content missing" at the exact
+    // moment the switch finished.
+    url: String
   }
 
   connect() {
@@ -34,6 +42,16 @@ export default class extends Controller {
 
   reload() {
     const frame = this.element.closest("turbo-frame") || this.element
-    if (frame && typeof frame.reload === "function") frame.reload()
+    if (!frame) return
+
+    // Point the frame back at its own address first, when it has drifted.
+    // Setting the attribute is itself a navigation, so there is nothing more to
+    // do this tick — calling reload() as well would fetch twice.
+    if (this.hasUrlValue && frame.getAttribute("src") !== this.urlValue) {
+      frame.setAttribute("src", this.urlValue)
+      return
+    }
+
+    if (typeof frame.reload === "function") frame.reload()
   }
 }

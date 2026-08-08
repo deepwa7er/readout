@@ -11,21 +11,27 @@ class VariantsController < ApplicationController
   # The frame's contents. Polled while a switch is in progress, which is why it
   # is a fragment rather than a page.
   def show
-    render partial: "variants/variant", locals: variant_locals
+    render partial: "variants/variant", locals: variant_locals(error: flash[:alert])
   end
 
+  # Redirected rather than rendered, which is not a style choice.
+  #
+  # This is submitted from inside a Turbo Frame, and rendering the frame in
+  # response to the POST left the frame's src pointing at this URL — which
+  # accepts no GET. The next poll fetched it, got a 404, and the frame said
+  # "Content missing" the moment the switch finished. Redirecting sends the
+  # frame back to a URL it can keep asking for.
+  #
+  # The refusal survives the redirect because the frame renders the flash
+  # itself. It is only lost when a redirect lands somewhere the flash is drawn
+  # outside the frame, which is what made rendering look necessary.
   def switch
     client.switch_variant(params[:name])
-
-    # Rendered rather than redirected, on purpose. This is submitted from inside
-    # a Turbo Frame, and a redirect would have its matching frame extracted and
-    # the flash dropped on the floor — so a refusal would vanish silently. The
-    # frame carries its own outcome instead.
-    render partial: "variants/variant", locals: variant_locals
+    redirect_to variant_path, status: :see_other
   rescue Harness::Client::Busy => e
-    render partial: "variants/variant", locals: variant_locals(error: e.message)
+    redirect_to variant_path, status: :see_other, alert: e.message
   rescue Harness::Client::Error => e
-    render partial: "variants/variant", locals: variant_locals(error: "Could not switch: #{e.message}")
+    redirect_to variant_path, status: :see_other, alert: "Could not switch: #{e.message}"
   end
 
   private
