@@ -45,7 +45,10 @@ class TestRunsController < ApplicationController
   # the one the form offers; everything else stays available through the runner's
   # API and the CLI.
   DEFAULT_PEOPLE = 100
-  DEFAULT_VUS = 500
+  DEFAULT_VUS = 300
+
+  # How often a post lands in the all-hands room.
+  ALL_HANDS_SHARE = "0.01".freeze
 
   # Seconds between one person's messages. Not sent as a lever — the runner does
   # not accept it, and the scenario's own default is this same value. It is a
@@ -53,36 +56,33 @@ class TestRunsController < ApplicationController
   # minute is already a busy participant. Stated here only so the page can say so.
   MESSAGE_INTERVAL_SECONDS = 20
 
-  # How many sessions bin/mint-sessions.sh last minted. Asking for more VUs than
-  # this does not fail, it just makes them share identities.
-  MAX_MINTED_SESSIONS = 1000
-
   # Levers for a chat run: people in the one hot room, plus enough distinct
   # accounts for them.
   #
-  # USER_POOL is derived rather than asked about: two simulated people sharing
-  # one account would share a presence record and an unread marker, so the room
-  # would think fewer people were in it than the test intends.
+  # USER_POOL is derived rather than asked about, and it is now simply the
+  # company: every employee is online and each needs their own identity. Two
+  # simulated people sharing one account would share a presence record and an
+  # unread marker, so the room would think fewer people were in it than the test
+  # intends.
+  #
+  # It was capped at 1,000 until the seeded-company model arrived, back when
+  # exactly that many sessions were minted once and left alone. The cap outlived
+  # the reason: a 2,000-employee run seeded 2,000 people, then ran 2,000 virtual
+  # users across 1,000 identities and reported it as 2,000.
   def self.levers_for_chat(people)
-    {
-      "PEOPLE" => people,
-      "USER_POOL" => [ people, MAX_MINTED_SESSIONS ].min
-    }
+    { "PEOPLE" => people, "USER_POOL" => people }
   end
 
   # Levers for an enterprise run: concurrent employees spread across many rooms.
   #
-  # HOT_ROOM_SHARE is held at 0.05 so the 10k room behaves like a rarely-written
-  # announcement channel rather than the primary workplace. Without it half the
-  # VUs would pile into the hot room and the run would be a second hot-room test
-  # rather than an enterprise spread. USER_POOL is derived the same way as for
+  # The all-hands room holds every employee, so a post there costs a membership
+  # row and a broadcast per person in the company. A real announcement channel
+  # is read by everyone and written to rarely, and at anything like an even
+  # share it stops being one and becomes the whole test: at 5% it was producing
+  # 99% of the fan-out work in the run. USER_POOL is derived the same way as for
   # chat — each VU needs its own identity.
   def self.levers_for_enterprise(vus)
-    {
-      "VUS" => vus,
-      "USER_POOL" => [ vus, MAX_MINTED_SESSIONS ].min,
-      "HOT_ROOM_SHARE" => "0.05"
-    }
+    { "VUS" => vus, "USER_POOL" => vus, "HOT_ROOM_SHARE" => ALL_HANDS_SHARE }
   end
 
   def new
