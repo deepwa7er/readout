@@ -20,6 +20,10 @@ Rails.application.routes.draw do
 
       # The running request totals, which climb while a run is in flight.
       get :requests
+
+      # The charts. A fragment because a live run may not have a series to draw
+      # yet, and that changes while its page is open.
+      get :charts
       post :cancel
       post :publish
     end

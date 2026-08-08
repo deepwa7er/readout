@@ -46,30 +46,21 @@
 
 <%= render "shared/settings", settings: live ? @live["levers"].to_h : @run.settings %>
 
-<%# The charts are the same two in both states, drawn by the same code from the
-    same shape of payload — polled from the runner while the run is in flight,
-    read from the row afterwards. They sit OUTSIDE the status frame below: that
-    frame swaps its contents every couple of seconds, and a canvas rebuilt that
-    often flickers. %>
-<% if live && @live["state"] == "seeding" %>
-  <%# No charts yet: k6 has not started, so there is no series to draw. Three
-      empty frames would read as a run producing nothing. %>
-  <p class="finding-body measure muted">
-    The charts appear once the load test starts. Its company is being built
-    first — see below.
-  </p>
-<% elsif live || @run.progress %>
-  <%= render "shared/coping_charts",
-        progress_url: progress_run_path(stamp, format: :json),
-        live: live %>
+<%# The charts are the same three in both states, drawn by the same code from
+    the same shape of payload — polled from the runner while the run is in
+    flight, read from the row afterwards.
+
+    A live run gets them in a frame, because which of "no series yet", "here
+    they are" and "this run never recorded any" applies changes while the page
+    is open. A finished run cannot change, so it renders them directly and
+    fetches nothing extra. Both paths render the same partial. %>
+<% if live %>
+  <%= turbo_frame_tag "run-charts", src: charts_run_path(stamp), loading: :eager do %>
+    <p class="muted">Loading…</p>
+  <% end %>
 <% else %>
-  <p class="finding-body measure muted">
-    <strong>No delivery charts for this run.</strong> They are computed from k6's
-    sub-second output on the machine that generated the load, and this run was
-    imported before that payload was being saved. Run
-    <code>bin/runner --rebuild-progress</code> there and publish again to fill
-    them in.
-  </p>
+  <%= render "runs/charts",
+        stamp: stamp, seeding: false, live: false, stored: @run.progress.present? %>
 <% end %>
 
 <%# The server under test, and how much of what was asked of it came back.
