@@ -14,13 +14,17 @@
 
 <% publish_state = run["publish_state"].to_s %>
 <% awaiting_results = publish_state.in?(%w[ pending publishing ]) %>
+<% seeding = run["state"] == "seeding" %>
 
 <%= turbo_frame_tag "run-status" do %>
   <div data-controller="poll"
-       data-poll-active-value="<%= run["state"] == "running" || awaiting_results %>"
+       data-poll-active-value="<%= run["state"].in?(%w[ running seeding ]) || awaiting_results %>"
        data-poll-url-value="<%= status_run_path(run["id"]) %>">
     <p class="meta">
-      <% if run["state"] == "running" %>
+      <% if seeding %>
+        building a company of <%= number_with_delimiter(run["employees"]) %> employees
+        <% if run["step"].present? %> · <%= run["step"] %><% end %>
+      <% elsif run["state"] == "running" %>
         running · started <%= time_ago_in_words(Time.parse(run["started_at"])) %> ago
       <% elsif run["threshold_breach"] %>
         finished · thresholds crossed
@@ -31,6 +35,19 @@
         · took <%= distance_of_time_in_words(Time.parse(run["started_at"]), Time.parse(run["finished_at"])) %>
       <% end %>
     </p>
+
+    <%# A company is built before the load test that measures it, when the one in
+        the database is a different size. It takes seconds rather than the
+        instant a reader might assume, and saying nothing would make the wait
+        look like a run that had started and produced nothing. %>
+    <% if seeding %>
+      <p class="finding-body measure muted">
+        Every employee in this company will be online during the run, so the
+        database is rebuilt to that size first: employees, their sessions, an
+        all-hands room containing all of them, and Pareto-distributed team
+        rooms. The load test starts by itself once that is done.
+      </p>
+    <% end %>
 
     <% if run["threshold_breach"] %>
       <p class="finding-body measure muted">
@@ -51,7 +68,9 @@
     <% end %>
 
     <div class="actions">
-      <% if run["state"] == "running" %>
+      <% if seeding %>
+        <%= button_to "Stop", cancel_run_path(run["id"]), class: "button button--danger" %>
+      <% elsif run["state"] == "running" %>
         <%= button_to "Stop", cancel_run_path(run["id"]), class: "button button--danger" %>
       <% else %>
         <% if publish_state == "published" %>
