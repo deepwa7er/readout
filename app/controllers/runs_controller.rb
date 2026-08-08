@@ -58,6 +58,7 @@ class RunsController < ApplicationController
     unanswered = live["unanswered"]
 
     render partial: "runs/live_requests", locals: {
+      stamp: params[:stamp],
       received: received,
       unanswered: unanswered,
       share: (unanswered.to_f / received if received.to_i.positive? && unanswered),

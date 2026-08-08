@@ -17,7 +17,8 @@
 
 <%= turbo_frame_tag "run-status" do %>
   <div data-controller="poll"
-       data-poll-active-value="<%= run["state"] == "running" || awaiting_results %>">
+       data-poll-active-value="<%= run["state"] == "running" || awaiting_results %>"
+       data-poll-url-value="<%= status_run_path(run["id"]) %>">
     <p class="meta">
       <% if run["state"] == "running" %>
         running · started <%= time_ago_in_words(Time.parse(run["started_at"])) %> ago

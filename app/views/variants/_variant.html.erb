@@ -23,7 +23,8 @@
 <% just_landed = finished_at.present? && finished_at > 2.minutes.ago %>
 
 <%= turbo_frame_tag "server-variant" do %>
-  <div data-controller="poll" data-poll-active-value="<%= switching %>" data-poll-interval-value="2000">
+  <div data-controller="poll" data-poll-active-value="<%= switching %>" data-poll-interval-value="2000"
+       data-poll-url-value="<%= variant_path %>">
     <section class="verdict measure">
       <% if switching %>
         <strong>Switching the server to <%= state["target"] %>…</strong>
