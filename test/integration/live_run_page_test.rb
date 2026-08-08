@@ -146,4 +146,93 @@ class LiveRunPageTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "a[href=?]", "/runs/20260101-120000"
   end
+  # k6 ends a run with a non-zero status when its thresholds were crossed. The
+  # run completed and every number it produced is good — often it is the most
+  # interesting run of the day — so the page must not call it "failed".
+  test "a run that crossed thresholds is reported as a result, not a failure" do
+    breached = IN_FLIGHT.merge(
+      "state" => "failed",
+      "threshold_breach" => true,
+      "error" => "exited with status 99",
+      "finished_at" => "2026-01-01T12:04:00Z",
+      "publish_state" => "published"
+    )
+
+    with_runner(FakeRunner.new(run: breached)) do
+      get status_run_path("20260101-120000")
+
+      assert_response :success
+      assert_select "p.meta", /thresholds crossed/
+      assert_select "p", /a finding about the server, not a fault in the run/
+      assert_select ".figure--bad", count: 0
+    end
+  end
+
+  test "a run that genuinely broke says so" do
+    broken = IN_FLIGHT.merge(
+      "state" => "failed",
+      "error" => "signal: killed",
+      "finished_at" => "2026-01-01T12:04:00Z"
+    )
+
+    with_runner(FakeRunner.new(run: broken)) do
+      get status_run_path("20260101-120000")
+
+      assert_select ".figure--bad", /did not complete/
+    end
+  end
+
+  # Results are saved automatically, and publishing starts a few seconds after a
+  # run finishes — the final chart payload is computed from k6's whole output
+  # first. A frame that stopped polling in that gap froze on the moment before,
+  # offering to save results that were already on their way.
+  test "results on their way are awaited rather than offered for saving" do
+    %w[ pending publishing ].each do |state|
+      finishing = IN_FLIGHT.merge(
+        "state" => "succeeded",
+        "finished_at" => "2026-01-01T12:04:00Z",
+        "publish_state" => state
+      )
+
+      with_runner(FakeRunner.new(run: finishing)) do
+        get status_run_path("20260101-120000")
+
+        assert_select "[data-poll-active-value=true]", { count: 1 }, "must keep watching while #{state}"
+        assert_select "p", /Saving the results/
+        assert_select "form[action=?]", publish_run_path("20260101-120000"), count: 0
+      end
+    end
+  end
+
+  test "a finished run with its results saved offers the full report" do
+    saved = IN_FLIGHT.merge(
+      "state" => "succeeded",
+      "finished_at" => "2026-01-01T12:04:00Z",
+      "publish_state" => "published"
+    )
+
+    with_runner(FakeRunner.new(run: saved)) do
+      get status_run_path("20260101-120000")
+
+      assert_select "a[href=?]", run_path("20260101-120000"), /Open the full report/
+      assert_select "[data-poll-active-value=false]", 1
+    end
+  end
+
+  # Nothing publishes a stopped run, so asking is the only way to get its
+  # partial results in — and the button must still be there for that.
+  test "a run nothing will publish still offers to save" do
+    stopped = IN_FLIGHT.merge(
+      "state" => "canceled",
+      "finished_at" => "2026-01-01T12:04:00Z",
+      "publish_state" => ""
+    )
+
+    with_runner(FakeRunner.new(run: stopped)) do
+      get status_run_path("20260101-120000")
+
+      assert_select "form[action=?]", publish_run_path("20260101-120000")
+      assert_select "[data-poll-active-value=false]", 1
+    end
+  end
 end
