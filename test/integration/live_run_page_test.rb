@@ -55,17 +55,20 @@ class LiveRunPageTest < ActionDispatch::IntegrationTest
       assert_select "h1", text: "20260101-120000"
       assert_select "p.meta", /a hundred people/
 
-      # The same three charts as a finished run, pointed at the same endpoint.
+      # Both live halves are frames, because both change while the page is open.
+      assert_select "turbo-frame#run-charts[src=?]", charts_run_path("20260101-120000")
+      assert_select "turbo-frame#run-status"
+
+      # The charts themselves come from the frame.
+      get charts_run_path("20260101-120000")
+
       assert_select "h2", text: "How long a message takes to arrive"
       assert_select "h2", text: "Requests per second"
       assert_select "[data-coping-chart-url-value=?]",
         progress_run_path("20260101-120000", format: :json), count: 3
 
-      # Polling, because more data is coming.
+      # Polling the progress endpoint, because more data is coming.
       assert_select "[data-coping-chart-live-value=true]", count: 3
-
-      # And the live half: state and the means to stop it.
-      assert_select "turbo-frame#run-status"
     end
   end
 
@@ -298,11 +301,34 @@ class LiveRunPageTest < ActionDispatch::IntegrationTest
 
   test "the charts wait until there is a load test to chart" do
     with_runner(FakeRunner.new(run: SEEDING)) do
-      get run_path("20260101-120000")
+      get charts_run_path("20260101-120000")
 
       assert_response :success
       assert_select "canvas", false
       assert_select "p", /charts appear once the load test starts/
+
+      # Still watching, because this is the state that changes on its own.
+      assert_select "[data-poll-active-value=true]", 1
+    end
+  end
+
+  # The bug this frame exists for: the page decided once whether there was
+  # anything to draw, so a run that started measuring while you were watching
+  # kept showing the note until you refreshed.
+  test "the charts replace the note by themselves when the run starts" do
+    with_runner(FakeRunner.new(run: SEEDING)) do
+      get charts_run_path("20260101-120000")
+      assert_select "canvas", false
+    end
+
+    running = SEEDING.merge("state" => "running", "step" => nil)
+
+    with_runner(FakeRunner.new(run: running)) do
+      get charts_run_path("20260101-120000")
+
+      assert_select "canvas", 3
+      # And stops watching: the canvases must not be rebuilt every two seconds.
+      assert_select "[data-poll-active-value=false]", 1
     end
   end
 end

@@ -67,6 +67,23 @@ class RunsController < ApplicationController
     }
   end
 
+  # The charts, as a fragment.
+  #
+  # A live run's page cannot decide once whether there is anything to draw: a
+  # run building its company has no series, and a few seconds later it has one.
+  # Deciding at render time left the note in place until the reader refreshed.
+  def charts
+    run = Run.find_by(stamp: params[:stamp])
+    live = run ? nil : live_run
+
+    render partial: "runs/charts", locals: {
+      stamp: params[:stamp],
+      seeding: live&.dig("state") == "seeding",
+      live: live.present?,
+      stored: run&.progress.present?
+    }
+  end
+
   # The live status fragment: state, and the means to stop it. Polled, which is
   # why it is a fragment rather than part of the page.
   def status
