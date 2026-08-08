@@ -37,9 +37,9 @@ export default class extends Controller {
   static targets = ["canvas", "warning", "readout"]
   static values = {
     url: String,
-    // "deliveries" or "latency". One controller, two charts: they differ only
-    // in which series they read, what the reference line means, and which side
-    // of it counts as good.
+    // "deliveries", "latency" or "requests". One controller, three charts: they
+    // differ only in which series they read, what the reference line means, and
+    // which side of it counts as good.
     series: { type: String, default: "deliveries" },
     // Milliseconds under which a message still feels immediate. Above this the
     // conversation stops feeling live.
@@ -95,6 +95,13 @@ export default class extends Controller {
           // A flat goal rather than measured demand: for latency there is no
           // "owed" figure, only a threshold past which a room stops feeling live.
           this.target = this.points.map((p) => ({ t: p.t, v: this.latencyGoalValue }))
+        } else if (this.seriesValue === "requests") {
+          // Requests the server finished, whatever the scenario. No reference
+          // line: nobody asked for a particular number of them, so there is no
+          // "owed" to shade against — unlike deliveries, which are owed by
+          // arithmetic the moment somebody posts.
+          this.points = payload.rps || []
+          this.target = []
         } else {
           // A chat run measures deliveries; a request run measures requests.
           this.points = (payload.deliveries || []).length ? payload.deliveries : (payload.rps || [])
@@ -339,10 +346,7 @@ export default class extends Controller {
     ctx.save()
     ctx.translate(12, top + plotH / 2)
     ctx.rotate(-Math.PI / 2)
-    ctx.fillText(
-      this.seriesValue === "latency" ? "seconds until a message arrives" : "messages delivered per second",
-      0, 0
-    )
+    ctx.fillText(this.yAxisLabel(), 0, 0)
     ctx.restore()
 
     // The target is piecewise linear by construction — a ramp, then a flat hold.
@@ -359,9 +363,25 @@ export default class extends Controller {
     if (this.hasReadoutTarget && revealed.length > 0) {
       // Read from the playhead too, so the number and the line agree.
       const current = revealed[revealed.length - 1].v
-      this.readoutTarget.textContent = this.seriesValue === "latency"
-        ? this.formatDelay(current)
-        : `${current.toFixed(0)} messages per second`
+      this.readoutTarget.textContent = this.currentReading(current)
+    }
+  }
+
+  // What this chart's y-axis measures, said in words.
+  yAxisLabel() {
+    switch (this.seriesValue) {
+      case "latency": return "seconds until a message arrives"
+      case "requests": return "requests per second"
+      default: return "messages delivered per second"
+    }
+  }
+
+  // The figure above the chart, matching where the line currently is.
+  currentReading(value) {
+    switch (this.seriesValue) {
+      case "latency": return this.formatDelay(value)
+      case "requests": return `${value.toFixed(0)} requests per second`
+      default: return `${value.toFixed(0)} messages per second`
     }
   }
 

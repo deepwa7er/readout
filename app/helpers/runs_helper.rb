@@ -46,12 +46,14 @@ module RunsHelper
   #
   # Zero prints muted rather than red. A run where every request came back should
   # not draw the eye to the figure saying so.
-  def unanswered_figure(run)
-    count = run.unanswered_requests
+  #
+  # Takes the numbers rather than a run, because a run in flight has no row to
+  # ask: the same figure is drawn from the runner's running totals while the
+  # test is going and from the imported row afterwards.
+  def unanswered_figure(count, share = nil)
     return tag.span("—", class: "figure--none") if count.blank?
     return tag.span("0", class: "figure--none") if count.zero?
 
-    share = run.unanswered_share
     text = number_with_delimiter(count)
     # Sub-percent shares get a second digit: "0.0%" reads as none, and none is
     # the one thing this figure is not saying.

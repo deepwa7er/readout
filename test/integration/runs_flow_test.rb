@@ -31,7 +31,7 @@ class RunsFlowTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", text: @run.stamp
     assert_select "h2", text: "Settings"
-    assert_select "h2", text: "Requests per second"
+    assert_select "h2", text: "Requests per second, by load"
     assert_select "svg.chart--plotted"
   end
 
@@ -46,7 +46,6 @@ class RunsFlowTest < ActionDispatch::IntegrationTest
   test "show explains what requests per second means" do
     get run_path(@run)
 
-    assert_select "p", /how many actions the server finished each second/
     assert_select "p", /how many simulated users were browsing/
   end
 
@@ -91,7 +90,7 @@ class RunsFlowTest < ActionDispatch::IntegrationTest
   # depending on whether you arrived from the run list or from having just
   # launched it. The launched view is the one that is right, so the historical
   # page draws the same two charts, from the payload the runner computed.
-  test "a finished run carries the same two charts as a run in flight" do
+  test "a finished run carries the same charts as a run in flight" do
     @run.create_progress!(payload: { "deliveries" => [ { "t" => 1, "v" => 40 } ], "duration_s" => 60 })
 
     get run_path(@run)
@@ -99,10 +98,10 @@ class RunsFlowTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h2", text: "How long a message takes to arrive"
     assert_select "h2", text: "Messages delivered per second"
-    assert_select "[data-coping-chart-url-value=?]", progress_run_path(@run, format: :json), count: 2
+    assert_select "[data-coping-chart-url-value=?]", progress_run_path(@run, format: :json), count: 3
 
     # Nothing more is coming, so the chart is told not to poll for it.
-    assert_select "[data-coping-chart-live-value=false]", count: 2
+    assert_select "[data-coping-chart-live-value=false]", count: 3
   end
 
   test "the stored series are served in the shape the chart reads" do

@@ -47,6 +47,25 @@ class RunsController < ApplicationController
     raise ActiveRecord::RecordNotFound, "no run #{params[:stamp]}" if @run.nil? && @live.nil?
   end
 
+  # The running request totals, for a run still in flight.
+  #
+  # A fragment because they climb while the run goes: the page refreshes this
+  # rather than waiting for the results to be imported to say how much the
+  # server was asked for and how much of it went unanswered.
+  def requests
+    live = client.progress(params[:stamp]) || {}
+    received = live["requests"]
+    unanswered = live["unanswered"]
+
+    render partial: "runs/live_requests", locals: {
+      received: received,
+      unanswered: unanswered,
+      share: (unanswered.to_f / received if received.to_i.positive? && unanswered),
+      # Stops refreshing when the run does: after that the totals are final.
+      active: live_run&.dig("state") == "running"
+    }
+  end
+
   # The live status fragment: state, and the means to stop it. Polled, which is
   # why it is a fragment rather than part of the page.
   def status
