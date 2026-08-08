@@ -38,6 +38,29 @@ class VariantsController < ApplicationController
 
   # A runner that cannot be reached mid-page must not blank the frame: the page
   # says what it could not read rather than implying there are no variants.
+  #
+  # KNOWN, AND DELIBERATELY NOT FIXED: this occasionally reports a timeout when
+  # nothing is wrong.
+  #
+  # Reading the deployed variant is a live round trip on every page load —
+  # readout, to the runner on the dev box, to `ssh laptop`, to `docker inspect`,
+  # and back — against Harness::Client's five second budget. It normally takes
+  # about 400ms. On 2026-08-08 one request took 10,159ms and the frame rendered
+  # "the deployed server could not be read"; the next took 574ms. It is most
+  # likely to happen mid-run, when the dev box is generating load and the
+  # machine under test is under it.
+  #
+  # The decision is to refresh the page until the round trip lands inside five
+  # seconds, rather than cache the reading in the runner or lengthen the
+  # timeout. Two reasons it is tolerable. Nothing about a run depends on it: the
+  # variant recorded against a run is probed by bin/run.sh at run start and
+  # written into run-config.txt, so runs stay correctly labelled while this
+  # frame is showing an error. And the failure is loud and honest — it says it
+  # could not read the server rather than showing a stale or invented one, which
+  # is the property worth keeping if only one of speed and honesty is available.
+  #
+  # The cost of the decision: while the frame is in that state the switch
+  # buttons are not rendered, so changing variant needs a reload first.
   def variant_locals(error: nil)
     { data: client.variants || {}, error: error }
   rescue Harness::Client::Error => e

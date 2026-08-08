@@ -147,6 +147,33 @@ Two consequences of the split worth knowing:
 - **One run at a time.** A second launch is refused rather than queued, because
   two concurrent load tests would each measure the other.
 
+## A known error you can ignore
+
+The new-test page sometimes shows **"The deployed server could not be read —
+runner unreachable: Net::ReadTimeout"** where the variant switcher belongs.
+
+Reading which build of Campfire is deployed is a live round trip on every page
+load: readout, to the runner on the dev box, to `ssh laptop`, to
+`docker inspect`, and back, against a five second budget. It normally takes
+about 400ms. Occasionally it does not — one measured request took 10.2 seconds,
+and the one a minute later took 0.6. It is likeliest mid-run, when the dev box
+is generating load and the machine under test is under it.
+
+**We are not fixing this. Refresh the page until the round trip lands inside
+five seconds.**
+
+That is a considered choice, not neglect. Nothing about a run depends on this
+call: the variant recorded against a run is probed by `bin/run.sh` at run start
+and written into its `run-config.txt`, so runs stay correctly labelled while
+this frame is showing an error. And the frame fails loudly rather than showing
+a stale or invented variant, which is the property worth keeping. The cost is
+that the switch buttons are missing until it loads cleanly, so changing variant
+needs a reload first.
+
+The fix, if it ever becomes worth it, is to cache the reading in the runner for
+a few seconds and invalidate it after a switch — which takes the ssh off the
+page-load path without going back to remembering what was last deployed.
+
 ## Deployment
 
 Live at **<https://readout.intern.deepwa7er.net>** (tailnet only, behind

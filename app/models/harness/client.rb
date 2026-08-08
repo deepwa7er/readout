@@ -15,6 +15,10 @@ module Harness
     # Deliberately short. These calls sit in the request path, and a hung runner
     # must not hang the page — the dashboard's read-only half has to keep working
     # regardless.
+    #
+    # Five seconds is thin for #variants, which crosses a network, a login shell
+    # and the Docker daemon before it answers. That is a known, accepted
+    # trade-off rather than an oversight: see the note in VariantsController.
     OPEN_TIMEOUT = 1
     READ_TIMEOUT = 5
 
