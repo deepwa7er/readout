@@ -1,18 +1,51 @@
-<%# Deliberately minimal: whether it is still going, and the means to stop it.
-    The charts above carry the actual result. %>
+<%# Deliberately minimal: how the run ended, and whether its results are safe.
+    The charts above carry the actual result.
+
+    Two things this has to get right, both of which it got wrong before:
+
+    a run that k6 ended because its thresholds were crossed is a RESULT, not a
+    broken run — it is often the most interesting run of the day — and
+
+    the results are saved automatically, so this must keep watching until they
+    land rather than offering to save them. Publishing starts a few seconds
+    after a run finishes, because the final chart payload is computed from k6's
+    whole output first, and a frame that stopped polling in that gap froze on
+    the moment before. %>
+
+<% publish_state = run["publish_state"].to_s %>
+<% awaiting_results = publish_state.in?(%w[ pending publishing ]) %>
+
 <%= turbo_frame_tag "run-status" do %>
   <div data-controller="poll"
-       data-poll-active-value="<%= run["state"] == "running" || run["publish_state"] == "publishing" %>">
+       data-poll-active-value="<%= run["state"] == "running" || awaiting_results %>">
     <p class="meta">
-      <%= run["state"] %>
       <% if run["state"] == "running" %>
-        · started <%= time_ago_in_words(Time.parse(run["started_at"])) %> ago
-      <% elsif run["finished_at"].present? %>
+        running · started <%= time_ago_in_words(Time.parse(run["started_at"])) %> ago
+      <% elsif run["threshold_breach"] %>
+        finished · thresholds crossed
+      <% else %>
+        <%= run["state"] %>
+      <% end %>
+      <% if run["state"] != "running" && run["finished_at"].present? %>
         · took <%= distance_of_time_in_words(Time.parse(run["started_at"]), Time.parse(run["finished_at"])) %>
       <% end %>
     </p>
 
-    <% if run["publish_state"] == "failed" %>
+    <% if run["threshold_breach"] %>
+      <p class="finding-body measure muted">
+        The run completed and every number above is good. k6 ended it reporting
+        that thresholds were crossed, which means the server was slower than the
+        limits the harness asks for — a finding about the server, not a fault in
+        the run. The latencies are in the report.
+      </p>
+    <% elsif run["state"] == "failed" %>
+      <p class="finding-body measure figure--bad">
+        The run did not complete: <%= run["error"] %>. Its results are likely
+        partial.
+      </p>
+    <% end %>
+
+    <% if publish_state == "failed" %>
       <p class="muted measure figure--bad">Saving the results failed: <%= run["publish_error"] %></p>
     <% end %>
 
@@ -20,17 +53,18 @@
       <% if run["state"] == "running" %>
         <%= button_to "Stop", cancel_run_path(run["id"]), class: "button button--danger" %>
       <% else %>
-        <%# The results have landed, so this page has more to say than it is
-            showing: the same address now has the imported run behind it, with
-            the request figures and the throughput chart. Offered as a link
-            rather than reloading automatically — a page that reloaded itself
-            whenever the runner said "published" would loop forever if the
-            import ever failed to produce a row. %>
-        <% if run["publish_state"] == "published" %>
+        <% if publish_state == "published" %>
+          <%# The results have landed, so this address now has the imported run
+              behind it: the request figures, the throughput chart, everything.
+              Offered as a link rather than reloading automatically — a page that
+              reloaded itself whenever the runner said "published" would loop
+              forever if the import ever failed to produce a row. %>
           <%= link_to "Open the full report", run_path(run["id"]), class: "button" %>
-        <% elsif run["publish_state"] == "publishing" %>
+        <% elsif awaiting_results %>
           <p class="muted">Saving the results…</p>
         <% else %>
+          <%# Nothing is coming on its own: either the run was stopped, or this
+              runner has no publish command. Asking is the only way. %>
           <%= button_to "Save the results", publish_run_path(run["id"]), class: "button" %>
         <% end %>
         <%= link_to "New test", new_test_run_path, class: "button button--secondary" %>
