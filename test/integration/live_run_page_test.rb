@@ -55,28 +55,58 @@ class LiveRunPageTest < ActionDispatch::IntegrationTest
       assert_select "h1", text: "20260101-120000"
       assert_select "p.meta", /a hundred people/
 
-      # The same two charts as a finished run, pointed at the same endpoint.
+      # The same three charts as a finished run, pointed at the same endpoint.
       assert_select "h2", text: "How long a message takes to arrive"
+      assert_select "h2", text: "Requests per second"
       assert_select "[data-coping-chart-url-value=?]",
-        progress_run_path("20260101-120000", format: :json), count: 2
+        progress_run_path("20260101-120000", format: :json), count: 3
 
       # Polling, because more data is coming.
-      assert_select "[data-coping-chart-live-value=true]", count: 2
+      assert_select "[data-coping-chart-live-value=true]", count: 3
 
       # And the live half: state and the means to stop it.
       assert_select "turbo-frame#run-status"
     end
   end
 
-  # The figures a run can only have once it is over must not appear while it is
-  # still going: there is nothing to put in them.
-  test "a run in flight does not show the figures only a finished run has" do
+  # Everything the page can say, from the first second. The server it is
+  # measuring is fixed for the run, so it is rendered once; the request totals
+  # climb, so they refresh.
+  test "a run in flight shows the server it measures and its running totals" do
+    with_runner(FakeRunner.new(run: IN_FLIGHT.merge("server" => {
+      "variant" => "tuned",
+      "server_image" => "localhost:5000/campfire:6d2cf0a",
+      "server_env" => "CAMPFIRE_BATCH_UNREAD=1,RAILS_ENV=performance"
+    }))) do
+      get run_path("20260101-120000")
+
+      assert_select "h2", text: "Server"
+      assert_select ".settings dd", text: "tuned"
+      assert_select "turbo-frame#run-requests"
+    end
+  end
+
+  test "the running request totals are counted live" do
+    live = { "requests" => 14_962, "unanswered" => 157 }
+
+    with_runner(FakeRunner.new(run: IN_FLIGHT, progress: live)) do
+      get requests_run_path("20260101-120000")
+
+      assert_response :success
+      assert_select "h2", text: "Requests"
+      assert_select ".settings dd", /14,962/
+      assert_select ".settings dd", /157/
+      assert_select "[data-poll-active-value=true]", 1
+    end
+  end
+
+  # Throughput against LOAD is the one chart a live run cannot have: the levels
+  # are not known until the run is over.
+  test "a run in flight does not claim a load curve" do
     with_runner(FakeRunner.new(run: IN_FLIGHT)) do
       get run_path("20260101-120000")
 
-      assert_select "h2", text: "Requests", count: 0
-      assert_select "h2", text: "Requests per second", count: 0
-      assert_select "h2", text: "Server", count: 0
+      assert_select "h2", text: "Requests per second, by load", count: 0
     end
   end
 
@@ -91,7 +121,7 @@ class LiveRunPageTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", text: "20260101-120000"
     assert_select "h2", text: "How long a message takes to arrive"
-    assert_select "[data-coping-chart-live-value=false]", count: 2
+    assert_select "[data-coping-chart-live-value=false]", count: 3
     assert_select "turbo-frame#run-status", count: 0
     assert_select "h2", text: "Requests"
     assert_select "h2", text: "Server"

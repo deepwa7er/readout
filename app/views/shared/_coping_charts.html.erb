@@ -56,3 +56,23 @@
   behind. Sending one message to a room of 100 people is 100 deliveries, which is
   why this climbs so steeply with room size.
 </p>
+
+<h2>Requests per second</h2>
+
+<div data-controller="coping-chart"
+     data-coping-chart-series-value="requests"
+     data-coping-chart-live-value="<%= live %>"
+     data-coping-chart-url-value="<%= progress_url %>">
+  <p class="meta" data-coping-chart-target="readout">—</p>
+  <div class="chart-frame">
+    <canvas data-coping-chart-target="canvas"></canvas>
+  </div>
+</div>
+
+<p class="finding-body measure muted">
+  How many actions the server finished each second — opening a room, loading
+  older messages, sending a message. No reference line, because nobody asked for
+  a particular number of them: unlike deliveries, which are owed the moment
+  somebody posts, this is simply how much work got done. A line that stops
+  rising while people keep arriving is the server reaching its ceiling.
+</p>

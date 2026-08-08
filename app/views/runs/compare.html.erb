@@ -60,8 +60,8 @@
     </tr>
     <tr>
       <th class="meta">Never answered</th>
-      <td><%= unanswered_figure(@previous) %></td>
-      <td><%= unanswered_figure(@newest) %></td>
+      <td><%= unanswered_figure(@previous.unanswered_requests, @previous.unanswered_share) %></td>
+      <td><%= unanswered_figure(@newest.unanswered_requests, @newest.unanswered_share) %></td>
       <td></td>
     </tr>
     <tr>

@@ -65,103 +65,78 @@
   </p>
 <% end %>
 
+<%# The server under test, and how much of what was asked of it came back.
+
+    Both appear from the first second of a run rather than only once it has been
+    imported. The server is fixed for the whole run — the runner refuses to
+    switch it while a test is measuring — so it is rendered once. The request
+    totals climb as the run goes, so they sit in a frame that refreshes. %>
 <% if live %>
-  <%# Status and the stop button only. Everything else that used to live on the
-      live page has been removed deliberately. %>
-  <%= turbo_frame_tag "run-status", src: status_run_path(stamp), loading: :eager do %>
-    <p class="muted">Loading…</p>
+  <%= render "runs/server",
+        variant: @live.dig("server", "variant"),
+        image: @live.dig("server", "server_image"),
+        settings: @live.dig("server", "server_env") %>
+
+  <%= turbo_frame_tag "run-requests", src: requests_run_path(stamp), loading: :eager do %>
+    <h2>Requests</h2>
+    <p class="muted">Counting…</p>
   <% end %>
 <% else %>
-  <h2>Server</h2>
+  <%= render "runs/server",
+        variant: @run.variant,
+        image: @run.server_image,
+        settings: @run.server_env %>
 
-  <%# What the load was applied TO. Two runs are only comparable if this matches
-      or is deliberately different. %>
-  <dl class="settings">
-    <div>
-      <dt>variant</dt>
-      <dd><%= @run.variant_label %></dd>
-    </div>
-    <% if @run.server_image.present? %>
-      <div>
-        <dt>image</dt>
-        <dd><%= @run.server_image %></dd>
-      </div>
-    <% end %>
-    <% if @run.server_env.present? %>
-      <div>
-        <dt>settings</dt>
-        <dd><%= @run.server_env.split(",").join(" · ") %></dd>
-      </div>
-    <% end %>
-  </dl>
+  <%= render "runs/requests",
+        received: @run.total_requests,
+        unanswered: @run.unanswered_requests,
+        share: @run.unanswered_share %>
 
-  <% unless @run.variant_known? %>
-    <p class="finding-body measure muted">
-      This run does not name the server it measured, so it cannot be compared
-      against one that does. Runs record it from
-      <code>bin/campfire-variant</code> on the machine that generates the load;
-      runs from before that, or taken while the deployed image did not match the
-      recorded variant, say so here rather than guessing.
-    </p>
-  <% end %>
-
-  <h2>Requests</h2>
-
-  <dl class="settings">
-    <div>
-      <dt>Received</dt>
-      <dd><%= request_count_figure(@run.total_requests) %></dd>
-    </div>
-    <div>
-      <dt>Never answered</dt>
-      <dd><%= unanswered_figure(@run) %></dd>
-    </div>
-  </dl>
-
-  <p class="finding-body measure muted">
-    <strong>Received</strong> is every request the harness sent during the run,
-    including the ones it sent while people were still arriving.
-    <strong>Never answered</strong> counts the ones Campfire produced no response
-    for at all — the connection failed, or the proxy in front of it gave up
-    waiting and answered with a gateway error on its behalf. A 404 or a 500 is
-    <em>not</em> counted here: those are the application responding, and a server
-    that refuses is telling you something different from one that goes quiet.
-  </p>
-
-  <h2>Requests per second</h2>
-
-  <%# Two charts of the same measure, and which one a run gets is decided by the
-      run rather than by preference. Against load it needs several levels to be a
-      curve; a run that holds one population has one point, and its shape is over
-      time. See Run#load_curve?. %>
+  <%# Throughput against LOAD, which is a different chart from the one above and
+      only exists for a run that visited several levels: it is the curve across
+      them, and a run holding one population is a single dot. Cannot be drawn
+      live for the same reason — the levels are not known until the run is over.
+      See Run#load_curve?. %>
   <% if @run.load_curve? %>
+    <h2>Requests per second, by load</h2>
+
     <%= throughput_by_load_chart(@run) %>
 
     <p class="finding-body measure muted">
-      <strong>Requests per second</strong> is how many actions the server finished
-      each second — opening a room, loading older messages, sending a message.
-      Higher is better.
       <strong>People at once</strong> is how many simulated users were browsing
       simultaneously. If the line stops rising as people are added, the server has
       reached as much work as it can do.
     </p>
+  <% elsif @run.progress %>
+    <%# Already drawn above, by the same chart a live run uses. %>
   <% elsif (over_time = throughput_over_time_chart(@run)) %>
+    <%# Only for runs imported before the chart payload was saved. Everything
+        since draws the same canvas chart as a live run, from the same series. %>
+    <h2>Requests per second</h2>
+
     <%= over_time %>
 
     <p class="finding-body measure muted">
       <strong>Requests per second</strong> is how many actions the server finished
-      each second — opening a room, loading older messages, sending a message.
-      This run held one load level from start to finish, so it is drawn against
-      time rather than against people: the opening burst is everyone arriving, and
-      what matters after that is whether the line holds steady or sags as the
-      server falls behind.
+      each second. This run held one load level from start to finish, so it is
+      drawn against time rather than against people.
       <% if (level = @run.level_stats.first) %>
         It was measured at <strong><%= level.vus %></strong> people at once.
       <% end %>
     </p>
   <% else %>
+    <h2>Requests per second</h2>
+
     <p class="muted measure">
       This run did not last long enough to record anything.
     </p>
+  <% end %>
+<% end %>
+
+<% if live %>
+  <%# Status and the stop button only. Everything else that used to live on the
+      live page has been removed deliberately. %>
+  <%= turbo_frame_tag "run-status", src: status_run_path(stamp), loading: :eager do %>
+    <p class="muted">Loading…</p>
   <% end %>
 <% end %>

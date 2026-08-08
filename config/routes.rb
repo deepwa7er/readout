@@ -17,6 +17,9 @@ Rails.application.routes.draw do
       # State and the stop button, while the runner still knows this run.
       # Polled, so it is a fragment rather than part of the page.
       get :status
+
+      # The running request totals, which climb while a run is in flight.
+      get :requests
       post :cancel
       post :publish
     end
