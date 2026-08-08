@@ -51,7 +51,14 @@
     read from the row afterwards. They sit OUTSIDE the status frame below: that
     frame swaps its contents every couple of seconds, and a canvas rebuilt that
     often flickers. %>
-<% if live || @run.progress %>
+<% if live && @live["state"] == "seeding" %>
+  <%# No charts yet: k6 has not started, so there is no series to draw. Three
+      empty frames would read as a run producing nothing. %>
+  <p class="finding-body measure muted">
+    The charts appear once the load test starts. Its company is being built
+    first — see below.
+  </p>
+<% elsif live || @run.progress %>
   <%= render "shared/coping_charts",
         progress_url: progress_run_path(stamp, format: :json),
         live: live %>

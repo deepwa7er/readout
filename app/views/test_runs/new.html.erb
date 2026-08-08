@@ -54,9 +54,14 @@
     </div>
 
     <div class="measure" id="field-enterprise" style="<%= @scenario == "chat" ? "display:none" : "" %>">
-      <%= label_tag :vus, "Concurrent employees" %>
+      <%= label_tag :vus, "Company size" %>
       <%= number_field_tag :vus, @vus, min: 1, max: 2000, autocomplete: "off" %>
-      <p class="meta">how many employees are online and spread across realistic rooms at once</p>
+      <p class="meta">
+        the whole company, all of them online. The database is rebuilt to this
+        size before the run if it is not already: employees, sessions, an
+        all-hands room containing everyone, and Pareto team rooms. A few
+        seconds for a few hundred.
+      </p>
     </div>
 
     <p class="finding-body measure muted" id="desc-chat" style="<%= @scenario == "enterprise" ? "display:none" : "" %>">

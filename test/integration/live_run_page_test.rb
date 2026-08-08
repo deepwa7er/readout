@@ -265,4 +265,44 @@ class LiveRunPageTest < ActionDispatch::IntegrationTest
       assert_select "[data-poll-active-value=false]", 1
     end
   end
+
+  # A run builds its company before it measures it, when the database holds a
+  # different size. That takes seconds, and a page that showed "running" through
+  # it would be reporting a load test that had not started.
+  SEEDING = {
+    "id" => "20260101-120000", "scenario" => "enterprise", "state" => "seeding",
+    "employees" => 300, "step" => "creating 300 employees",
+    "levers" => { "VUS" => "300" }, "started_at" => "2026-01-01T12:00:00Z"
+  }.freeze
+
+  test "a run building its company says so, and what it is doing" do
+    with_runner(FakeRunner.new(run: SEEDING)) do
+      get status_run_path("20260101-120000")
+
+      assert_response :success
+      assert_select "p.meta", /building a company of 300 employees/
+      assert_select "p.meta", /creating 300 employees/
+      assert_select "[data-poll-active-value=true]", 1
+    end
+  end
+
+  # Stopping is the only thing to offer: there are no results to save yet.
+  test "a run building its company can be stopped and nothing else" do
+    with_runner(FakeRunner.new(run: SEEDING)) do
+      get status_run_path("20260101-120000")
+
+      assert_select "form[action=?]", cancel_run_path("20260101-120000")
+      assert_select "form[action=?]", publish_run_path("20260101-120000"), count: 0
+    end
+  end
+
+  test "the charts wait until there is a load test to chart" do
+    with_runner(FakeRunner.new(run: SEEDING)) do
+      get run_path("20260101-120000")
+
+      assert_response :success
+      assert_select "canvas", false
+      assert_select "p", /charts appear once the load test starts/
+    end
+  end
 end
