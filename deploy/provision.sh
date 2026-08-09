@@ -148,8 +148,11 @@ mkdir -p "${TOKENS_DIR}"
 for machine in mac desktop; do
   if [ ! -f "${TOKENS_DIR}/${machine}" ]; then
     echo "!! no token for '${machine}' — it will not be offered as a generator."
-    echo "   Copy it from that box (campfire-stress/.runner-token):"
-    echo "     ssh ${machine} cat code/campfire-stress/.runner-token | ssh deepwa7er 'cat > ${TOKENS_DIR}/${machine}'"
+    echo "   Copy it from that box, which generates its own on first start."
+    echo "   From the Mac, for itself:"
+    echo "     cat ~/code/campfire-stress/.runner-token | ssh deepwa7er 'cat > ${TOKENS_DIR}/${machine}'"
+    echo "   or for another machine:"
+    echo "     ssh <alias> cat code/campfire-stress/.runner-token | ssh deepwa7er 'cat > ${TOKENS_DIR}/${machine}'"
   fi
 done
 # Readable by the container's uid 1000, like the master key.
