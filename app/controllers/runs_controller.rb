@@ -9,18 +9,18 @@ class RunsController < ApplicationController
     # does not exist here and a rescan that cannot work.
     @results_available = @results_root.present? && Dir.exist?(@results_root)
 
-    # One call, not two: /healthz reports both that a runner is there and
-    # whether it is busy, and this sits in the page's critical path.
-    #
     # Probed rather than inferred from the environment: launching is offered only
-    # where a runner answers, which is the machine with k6 on it.
-    health = Harness::Client.new.health
-    @runner_available = health.present?
+    # where a machine answers, which is one with k6 on it.
+    fleet = Harness::Fleet.current
+    @runner_available = fleet.available.any?
 
-    # A running test must be stoppable from here. Previously the only Stop button
-    # lived on that run's own page, so leaving it meant hunting for the run again
-    # while load kept hitting the server.
-    @active_test_id = health["active_run"] if health.present? && health["busy"]
+    # A running test must be stoppable from here, and named by the machine it is
+    # on. Previously the only Stop button lived on that run's own page, so
+    # leaving it meant hunting for the run again while load kept hitting the
+    # server.
+    busy = fleet.busy
+    @active_test_id = busy&.active_run
+    @active_test_machine = busy&.runner&.name
   end
 
   # One page per run, whether it is happening or happened.
@@ -45,6 +45,11 @@ class RunsController < ApplicationController
     @live = @run ? nil : live_run
 
     raise ActiveRecord::RecordNotFound, "no run #{params[:stamp]}" if @run.nil? && @live.nil?
+
+    # Which machine generated the load. Read from the runner while the run is in
+    # flight and from the row afterwards, because before a run is imported the
+    # only record of it is the runner's.
+    @machine = @run ? @run.machine_label : live_machine
   end
 
   # The running request totals, for a run still in flight.
@@ -53,7 +58,7 @@ class RunsController < ApplicationController
   # rather than waiting for the results to be imported to say how much the
   # server was asked for and how much of it went unanswered.
   def requests
-    live = client.progress(params[:stamp]) || {}
+    live = client&.progress(params[:stamp]) || {}
     received = live["requests"]
     unanswered = live["unanswered"]
 
@@ -96,6 +101,8 @@ class RunsController < ApplicationController
   # Returns you to wherever you pressed Stop, since the button appears on the
   # index and the new-test page as well as the run's own page.
   def cancel
+    return redirect_back(fallback_location: run_path(params[:stamp]), alert: no_machine_holds_it) if client.nil?
+
     client.cancel(params[:stamp])
     redirect_back fallback_location: run_path(params[:stamp]), notice: "Load test stopped."
   rescue Harness::Client::Error => e
@@ -108,6 +115,8 @@ class RunsController < ApplicationController
   # on the runner's disk, and this app is not necessarily on that machine. Runs
   # publish themselves on completion, so this is the retry path.
   def publish
+    return redirect_to(run_path(params[:stamp]), alert: no_machine_holds_it) if client.nil?
+
     client.publish(params[:stamp])
     redirect_to run_path(params[:stamp]),
       notice: "Publishing results — the dashboard will update shortly."
@@ -134,7 +143,7 @@ class RunsController < ApplicationController
       return
     end
 
-    data = client.progress(params[:stamp])
+    data = client&.progress(params[:stamp])
 
     # Neither stored nor live: a run imported before the runner wrote its
     # payload, whose page says so in words rather than drawing an empty frame.
@@ -182,29 +191,63 @@ class RunsController < ApplicationController
 
     runs = Analysis::Importer.import_all(root)
     redirect_to runs_path, notice: "Imported #{runs.length} #{'run'.pluralize(runs.length)}."
-  rescue Analysis::Importer::MissingMetrics => e
+  rescue Analysis::RunBundle::MissingMetrics => e
     redirect_to runs_path, alert: e.message
   end
 
   private
 
-  def client
-    @client ||= Harness::Client.new
+  def fleet = @fleet ||= Harness::Fleet.current
+
+  # Runner state is held in memory, so a restarted runner forgets runs it has
+  # finished — and a machine that is asleep answers nothing at all. Both leave a
+  # run nobody can act on, which is worth saying plainly rather than failing.
+  def no_machine_holds_it
+    "No machine has run #{params[:stamp]} any more. Runners forget finished runs " \
+      "when they restart; results already published are unaffected."
   end
 
-  # What the runner knows about this run, or nil.
+  # The machine holding this run, and what it knows about it.
+  #
+  # Resolved by asking rather than remembered, so it answers just as well for a
+  # run started from the command line on either box as for one this dashboard
+  # launched. Memoised because a page reads it several times over.
   #
   # Fails soft in every direction. An imported run has to open on an instance
-  # that has no runner at all, and a runner that is down must not take the
+  # with no machines at all, and a machine that is down must not take the
   # dashboard's read-only half with it.
-  def live_run
-    @live_run ||= client.run(params[:stamp])
-  rescue Harness::Client::Error
-    nil
+  def holder
+    return @holder if defined?(@holder)
+
+    @holder = fleet.holding(params[:stamp])
+  end
+
+  # The runner holding this run. Nil once a run is imported, and nil on an
+  # instance with no reachable machines — both of which are ordinary.
+  def client = holder&.first&.client
+
+  def live_run = holder&.last
+
+  # Which machine is generating this run's load, for a page describing a run in
+  # flight.
+  #
+  # The run's own answer wins over the entry that was used to reach it: the
+  # runner reports the name it was started with, which is the same value
+  # bin/run.sh will write into run-config.txt. Taking it from here means the page
+  # says the same thing before and after the run is imported, even if this
+  # dashboard's address for that machine turns out to point somewhere else.
+  def live_machine
+    runner = holder&.first
+    return nil if runner.nil?
+
+    reported = live_run&.dig("machine").presence
+    return runner.name if reported.nil?
+
+    fleet.find(reported)&.name || reported
   end
 
   def live_log
-    client.log(params[:stamp])
+    client&.log(params[:stamp])
   rescue Harness::Client::Error
     nil
   end

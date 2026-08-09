@@ -1,83 +1,226 @@
-#!/usr/bin/env bash
+#!/usr/bin/env ruby
+# frozen_string_literal: true
 #
-# Publishes load-test results to the VPS instance.
+# Publishes load-test results to the Readout dashboard.
 #
-#   bin/publish                 import results locally, ship the database, restart
-#   bin/publish --no-restart    ship without restarting the remote service
+#   bin/publish                     publish every run in the results directory
+#   bin/publish 20260809-134656     publish one run (what the runner does)
+#   bin/publish --dry-run           parse and report, send nothing
 #
-# Why this exists: the raw results only exist on this Mac. `bin/run.sh` writes
-# them here, so the VPS has no files to import from. Only readout's import path
-# touches the filesystem — every page reads the database — so the SQLite file is
-# the thing worth shipping, not 80MB of CSV per run.
+# Why this exists: the raw results only exist on the machine that generated the
+# load. bin/run.sh writes them there, so the dashboard has no files to import
+# from — something has to push. A run's directory is ~165MB of CSV and JSON; what
+# this sends is the few hundred kilobytes worth keeping (Analysis::RunBundle).
 #
-# This imports into a LOCAL production database (same schema, same analyzer) and
-# rsyncs that file into the container's storage volume.
+# It runs on GENERATOR machines, which are not the dashboard and need not be a
+# Rails host. So: stdlib only, no bundler, no Rails boot, no database. The
+# analysis files are plain Ruby over IO for exactly this reason, and requiring
+# them directly is what keeps one implementation of the arithmetic rather than a
+# second one written in whatever language the generator happens to have.
+#
+# It replaced importing into a local production database and rsyncing that file
+# up. That worked only while exactly one machine generated load: two machines
+# each hold a database containing only their own runs, so whichever published
+# last replaced the other's history — silently, since nothing about the result
+# looked wrong.
 
-set -euo pipefail
+require "json"
+require "net/http"
+require "pathname"
+require "set"
+require "uri"
 
-cd "$(dirname "$0")/.."
+APP_ROOT = Pathname.new(__dir__).parent
 
-HOST="${READOUT_SSH:-deepwa7er}"
-REMOTE_DIR=/opt/readout/storage
-DB=storage/production.sqlite3
-RESTART=true
+# Checked before the app files are required, because that is where it would
+# otherwise fail: those use 3.x syntax, and an old interpreter reports it as a
+# syntax error inside a file this script merely reads. macOS still ships 2.6 as
+# /usr/bin/ruby, so this is a real way to arrive here.
+MINIMUM_RUBY = "3.1"
+if RUBY_VERSION < MINIMUM_RUBY
+  abort "bin/publish needs Ruby #{MINIMUM_RUBY} or newer; this is #{RUBY_VERSION} (#{RbConfig.ruby})"
+end
 
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --no-restart) RESTART=false; shift ;;
-    -h|--help)    awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"; exit 0 ;;
-    -*)           echo "unknown option: $1 (try --help)" >&2; exit 1 ;;
-    # A bare run id, passed by the runner service after a run finishes. Every
-    # run is imported regardless -- import is idempotent and re-importing keeps
-    # earlier runs current with the analyzer -- so this only labels the output.
-    *)            RUN_ID="$1"; shift ;;
-  esac
-done
+# Order matters: there is no autoloading here. analysis.rb defines the module and
+# its constants; the rest are read by RunBundle.
+%w[
+  analysis
+  analysis/percentile
+  analysis/metrics_file
+  analysis/server_trace
+  analysis/run_config
+  analysis/level_breakdown
+  analysis/run_bundle
+].each { |file| require APP_ROOT.join("app/models", "#{file}.rb").to_s }
 
-if [ -n "${RUN_ID:-}" ]; then
-  echo "==> publishing after run ${RUN_ID}"
-fi
+DEFAULT_URL = "https://readout.intern.deepwa7er.net"
+DEFAULT_TOKEN_FILE = File.expand_path("~/.config/readout/ingest-token")
+DEFAULT_RESULTS = File.expand_path("~/code/campfire-stress/results")
 
-if command -v mise >/dev/null 2>&1; then
-  rails() { mise exec -- bin/rails "$@"; }
-else
-  rails() { bin/rails "$@"; }
-fi
+# Generous: the dashboard is a small VPS behind a proxy, and a bundle with a
+# large chart payload is a slow write there rather than a hung one.
+OPEN_TIMEOUT = 10
+READ_TIMEOUT = 120
 
-if pgrep -x k6 >/dev/null 2>&1; then
-  echo "k6 is running — refusing to import mid-run." >&2
-  echo "This machine is the load generator; parsing a 700k-line CSV would steal" >&2
-  echo "cores from the test and show up as latency blamed on the app." >&2
-  exit 1
-fi
+class Publisher
+  class Failed < StandardError; end
 
-echo "==> importing results into the local production database"
-RAILS_ENV=production rails db:prepare
-RAILS_ENV=production rails runner \
-  'runs = Analysis::Importer.import_all(Rails.configuration.x.campfire_stress.results_root); puts "    imported #{runs.length} run(s); #{Run.count} total"'
+  def initialize(url:, token:, dry_run: false)
+    @uri = URI.parse("#{url.chomp('/')}/api/runs")
+    @token = token
+    @dry_run = dry_run
+  end
 
-if [ ! -f "$DB" ]; then
-  echo "expected $DB to exist after import" >&2
-  exit 1
-fi
+  def publish(directory)
+    bundle = Analysis::RunBundle.build(directory)
+    summary = "#{bundle.stamp} (#{bundle.machine || 'machine not recorded'}, " \
+              "#{bundle.levels.length} level(s), #{bundle.server_samples.length} server samples)"
 
-echo "==> shipping $(du -h "$DB" | cut -f1) to ${HOST}:${REMOTE_DIR}"
+    if @dry_run
+      warn "    would publish #{summary}"
+      return
+    end
 
-# SQLite keeps recent writes in a -wal sidecar; copying only the main file can
-# ship a database missing its most recent commits. A checkpoint folds the WAL
-# back in first so the file that travels is complete on its own.
-RAILS_ENV=production rails runner 'ActiveRecord::Base.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")'
+    send_bundle(bundle)
+    warn "    published #{summary}"
+  end
 
-# Plain flags only: macOS ships openrsync, which does not accept GNU rsync's
-# --info/--progress options.
-rsync -az "$DB" "${HOST}:${REMOTE_DIR}/production.sqlite3"
+  private
 
-# The container runs as uid 1000 and must be able to write the file it now owns.
-ssh "$HOST" "chown 1000:1000 ${REMOTE_DIR}/production.sqlite3"
+  def send_bundle(bundle)
+    request = Net::HTTP::Post.new(@uri)
+    request["Content-Type"] = "application/json"
+    request["X-Readout-Token"] = @token
+    request.body = JSON.generate(bundle.to_h)
 
-if [ "$RESTART" = true ]; then
-  echo "==> restarting readout"
-  ssh "$HOST" "systemctl restart readout"
-fi
+    response = Net::HTTP.start(
+      @uri.host, @uri.port,
+      use_ssl: @uri.scheme == "https",
+      open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT
+    ) { |http| http.request(request) }
 
-echo "==> https://readout.intern.deepwa7er.net"
+    return if response.is_a?(Net::HTTPSuccess)
+
+    raise Failed, "#{@uri} returned #{response.code}: #{explain(response)}"
+  rescue SystemCallError, Net::OpenTimeout, Net::ReadTimeout, IOError, OpenSSL::SSL::SSLError => e
+    raise Failed, "could not reach #{@uri}: #{e.class}: #{e.message}"
+  end
+
+  # The dashboard names what was wrong with a bundle it refused, and that message
+  # is the whole value of a failed publish: the results still exist here, so the
+  # question is always what to fix before sending them again.
+  def explain(response)
+    JSON.parse(response.body.to_s)["error"] || response.body.to_s.slice(0, 500)
+  rescue JSON::ParserError
+    response.body.to_s.slice(0, 500)
+  end
+end
+
+def parse_options(argv)
+  options = {
+    url: ENV.fetch("READOUT_URL", DEFAULT_URL),
+    token_file: ENV.fetch("READOUT_INGEST_TOKEN_FILE", DEFAULT_TOKEN_FILE),
+    results: ENV.fetch("CAMPFIRE_STRESS_RESULTS", DEFAULT_RESULTS),
+    dry_run: false,
+    run_ids: []
+  }
+
+  until argv.empty?
+    argument = argv.shift
+
+    case argument
+    when "--url"        then options[:url] = argv.shift
+    when "--token-file" then options[:token_file] = argv.shift
+    when "--results"    then options[:results] = argv.shift
+    when "--dry-run"    then options[:dry_run] = true
+    when "-h", "--help" then usage_and_exit
+    when /\A-/          then abort "unknown option: #{argument} (try --help)"
+    else                     options[:run_ids] << argument
+    end
+  end
+
+  options
+end
+
+def usage_and_exit
+  File.foreach(__FILE__).with_index do |line, index|
+    next if index.zero? # shebang
+    next if line.match?(/\A#\s*frozen_string_literal/)
+    break unless line.start_with?("#")
+
+    puts line.sub(/\A# ?/, "").chomp
+  end
+  exit 0
+end
+
+# The directories to publish, in run order.
+#
+# A named run is looked up by stamp rather than searched for, so a typo fails
+# with "no such run" rather than silently publishing nothing.
+def directories_for(options)
+  root = Pathname.new(options[:results])
+  abort "no results directory at #{root}" unless root.directory?
+
+  return options[:run_ids].map { |id| resolve(root, id) } if options[:run_ids].any?
+
+  root.children
+      .select(&:directory?)
+      .select { |dir| dir.join(Analysis::RunBundle::METRICS_FILE).exist? }
+      .sort
+end
+
+def resolve(root, run_id)
+  # The stamp names a directory, so a caller must not be able to reach outside
+  # the results root by naming one.
+  abort "#{run_id.inspect} is not a run stamp" unless run_id.match?(Analysis::RunBundle::STAMP)
+
+  directory = root.join(run_id)
+  abort "no such run: #{directory}" unless directory.directory?
+
+  directory
+end
+
+def read_token(path)
+  token = File.read(path).strip
+  abort "#{path} is empty" if token.empty?
+
+  token
+rescue SystemCallError
+  abort <<~MESSAGE
+    no ingest token at #{path}
+
+    Generator machines present a shared secret when publishing. Copy it from the
+    dashboard host (/opt/readout/ingest-token), or set READOUT_INGEST_TOKEN_FILE.
+  MESSAGE
+end
+
+options = parse_options(ARGV)
+
+# Parsing a 700k-line metrics.csv is several seconds of hard CPU, and this
+# machine is the load generator. Stealing cores from a run in progress shows up
+# as latency that would be blamed on the application under test.
+if system("pgrep -x k6 > /dev/null 2>&1")
+  abort "k6 is running — refusing to parse results mid-run, since this machine is the load generator."
+end
+
+directories = directories_for(options)
+abort "nothing to publish" if directories.empty?
+
+token = options[:dry_run] ? "" : read_token(options[:token_file])
+publisher = Publisher.new(url: options[:url], token: token, dry_run: options[:dry_run])
+
+warn "==> publishing #{directories.length} run(s) to #{options[:url]}"
+
+failures = directories.filter_map do |directory|
+  publisher.publish(directory)
+  nil
+rescue Analysis::RunBundle::Invalid, Publisher::Failed => e
+  warn "    FAILED #{directory.basename}: #{e.message}"
+  directory.basename.to_s
+end
+
+if failures.any?
+  abort "==> #{failures.length} run(s) failed to publish: #{failures.join(', ')}"
+end
+
+warn "==> #{options[:url]}"

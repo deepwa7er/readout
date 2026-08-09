@@ -2,7 +2,7 @@
     requires finding the right page first. Separated by space and weight rather
     than a coloured box, per the style guide. %>
 <section class="verdict measure">
-  <strong>A load test is running.</strong>
+  <strong>A load test is running<%= " on #{machine}" if machine %>.</strong>
   <p class="meta"><%= test_id %></p>
   <div class="actions">
     <%= link_to "Watch it", run_path(test_id), class: "button" %>

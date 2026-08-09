@@ -89,25 +89,49 @@ class TestRunsController < ApplicationController
     @scenario = SCENARIO_CHAT
     @people = DEFAULT_PEOPLE
     @vus = DEFAULT_VUS
+    @machines = available_machines
+    @machine = @machines.first&.runner&.key
+
+    busy = fleet.busy
     @active = active_run
+    @active_machine = busy&.runner&.name
   end
 
   def create
+    machine = fleet.find(params[:machine].to_s)
+
+    if machine.nil?
+      redirect_to new_test_run_path, alert: "No such machine: #{params[:machine].inspect}."
+      return
+    end
+
+    # Refused here rather than left to the machine that was asked, because no
+    # runner can see the others. Each enforces one-at-a-time in its own process,
+    # while every generator points at the same Campfire instance — so two runs on
+    # two machines would each measure the other's load, and neither would know.
+    if (busy = fleet.busy)
+      redirect_to new_test_run_path,
+        alert: "#{busy.runner.name} is already running #{busy.active_run}. " \
+               "Only one load test may run at a time: every machine points at " \
+               "the same Campfire, so a second would measure the first."
+      return
+    end
+
     scenario = params[:scenario].to_s
     scenario = SCENARIO_CHAT unless ALLOWED_SCENARIOS.include?(scenario)
 
-    levers, people, vus = case scenario
+    levers = case scenario
     when SCENARIO_ENTERPRISE
       vus = params[:vus].to_i
       vus = DEFAULT_VUS if vus <= 0
-      [ self.class.levers_for_enterprise(vus), nil, vus ]
+      self.class.levers_for_enterprise(vus)
     else
       people = params[:people].to_i
       people = DEFAULT_PEOPLE if people <= 0
-      [ self.class.levers_for_chat(people), people, nil ]
+      self.class.levers_for_chat(people)
     end
 
-    run = client.start(
+    run = machine.client.start(
       scenario: scenario,
       levers: levers.transform_values(&:to_s),
       note: params[:note]
@@ -124,11 +148,13 @@ class TestRunsController < ApplicationController
 
   private
 
+  # Whatever is running anywhere, so the form can offer to watch or stop it
+  # rather than a launch that would be refused.
   def active_run
-    health = client.health
-    return nil if health.blank? || !health["busy"]
+    busy = fleet.busy
+    return nil if busy.nil?
 
-    client.run(health["active_run"])
+    busy.runner.client.run(busy.active_run)
   rescue Harness::Client::Error
     nil
   end

@@ -40,6 +40,12 @@
     <%= @run.scenario.to_s.sub("scenarios/", "").presence || "unknown scenario" %>
     · <%= @run.variant_label %>
   <% end %>
+  <%# Which box generated the load. Stated on every run because it changes how
+      the numbers read: the desktop is wired to the target's own LAN, while the
+      Mac is on Wi-Fi where a ~400KB room page can saturate the link before the
+      application does. Runs from before this was recorded say so rather than
+      being attributed to whichever machine seems likely. %>
+  · <%= @machine ? "generated from #{@machine}" : "generator not recorded" %>
 </p>
 
 <h2>Settings</h2>
