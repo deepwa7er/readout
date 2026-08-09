@@ -34,14 +34,35 @@ module Readout
     config.x.campfire_stress.results_root =
       ENV.fetch("CAMPFIRE_STRESS_RESULTS", File.expand_path("~/code/campfire-stress/results"))
 
-    # The local runner service, which launches load tests on the machine that has
-    # k6 and writes results where this app can import them.
+    # The machines that can generate load, as JSON:
     #
-    # The deployed instance has no runner and must never appear to offer one:
-    # launching is only meaningful where the harness actually lives. Presence is
-    # probed at request time rather than assumed from the environment.
-    config.x.runner.url = ENV.fetch("RUNNER_URL", "http://127.0.0.1:7881")
-    config.x.runner.token_file =
-      ENV.fetch("RUNNER_TOKEN_FILE", File.expand_path("~/code/campfire-stress/.runner-token"))
+    #   [{"key": "mac", "name": "MacBook", "url": "http://100.74.202.93:7881",
+    #     "token_file": "/rails/config/runner-tokens/mac"}, ...]
+    #
+    # One value rather than a family of variables per machine, because the VPS
+    # resolves these at service start (deploy/provision.sh) and writes the result
+    # in one go — tailnet addresses are not constants, and a container there
+    # cannot resolve MagicDNS to find them itself.
+    #
+    # Unset means the developer's case: the runner on this same box, over
+    # loopback. See Harness::Fleet.default. A machine that is asleep simply does
+    # not appear, and the dashboard offers no launch on it — the read-only half
+    # keeps working regardless, which is the point.
+    # Named literally rather than through Harness::Fleet::ENV_KEY: autoloading is
+    # not available yet while this class body runs.
+    config.x.runners = ENV.fetch("RUNNERS", nil)
+
+    # The secret a generator machine presents when publishing a finished run.
+    #
+    # Results are parsed where the load was generated and pushed here, so this is
+    # the one route into the app that writes without a person driving it. A file
+    # rather than an env var, like the master key and the runner token: the
+    # deploy ships an image tar over the network and systemd units are
+    # world-readable, whereas this file is 0600 and mounted in.
+    #
+    # Missing is normal — a local instance nobody publishes to has no token, and
+    # the endpoint then refuses everything. See IngestToken.
+    config.x.ingest.token_file =
+      ENV.fetch("INGEST_TOKEN_FILE", Rails.root.join("config/ingest-token").to_s)
   end
 end

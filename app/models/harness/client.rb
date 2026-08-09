@@ -22,9 +22,13 @@ module Harness
     OPEN_TIMEOUT = 1
     READ_TIMEOUT = 5
 
-    def initialize(url: nil, token_file: nil)
-      @url = URI.parse(url || Rails.configuration.x.runner.url)
-      @token_file = token_file || Rails.configuration.x.runner.token_file
+    # Addressed explicitly rather than read from configuration, because there is
+    # more than one runner now and a client that defaulted to "the" runner would
+    # be picking one of several without being asked to. Harness::Runner#client is
+    # how one is built.
+    def initialize(url:, token_file: nil)
+      @url = URI.parse(url)
+      @token_file = token_file
     end
 
     # True when a runner is reachable. Used to decide whether to offer launching
@@ -101,11 +105,14 @@ module Harness
     private
 
     def token
-      @token ||= File.read(@token_file).strip
+      return @token if defined?(@token)
+
+      @token = @token_file.present? ? File.read(@token_file).strip.presence : nil
     rescue SystemCallError
-      # No token file means no runner on this machine, which is the normal state
-      # for the deployed instance.
-      nil
+      # No token file means this instance was not given the secret for that
+      # machine, which is the normal state for a dashboard with no harness
+      # beside it.
+      @token = nil
     end
 
     def path_for(path) = path

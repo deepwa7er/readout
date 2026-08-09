@@ -33,3 +33,9 @@
 # Ignore key files for decrypting credentials and more.
 /config/*.key
 
+
+# The shared secret generator machines present when publishing a run.
+/config/ingest-token
+
+# JetBrains project files.
+/.idea/

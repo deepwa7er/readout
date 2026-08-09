@@ -15,10 +15,11 @@
 
 <% if @active %>
   <section class="verdict measure">
-    <strong>A load test is already running.</strong>
+    <strong>A load test is already running<%= " on #{@active_machine}" if @active_machine %>.</strong>
     <p>
-      Only one runs at a time — two sharing the same machine as the generator,
-      and the same Campfire as the target, would each measure the other.
+      Only one runs at a time, on any machine. Every generator points at the
+      same Campfire, so a second run would measure the first as well as the
+      server.
     </p>
     <div class="actions">
       <%= link_to "Watch it", run_path(@active["id"]), class: "button" %>
@@ -27,6 +28,35 @@
   </section>
 <% else %>
   <%= form_with url: test_runs_path, method: :post do |form| %>
+    <%# Which machine generates the load.
+        Not cosmetic: the desktop is wired to the same LAN as the Campfire host,
+        while this Mac is on Wi-Fi, where a ~400KB room page can saturate the
+        link before the application saturates. The same test from the two boxes
+        can therefore give different answers, and the difference is the network
+        rather than the server. Only machines whose runner is answering appear —
+        a box that is asleep is simply not on the list. %>
+    <div class="measure">
+      <fieldset style="border: 0; padding: 0; margin: 0 0 1.25rem 0">
+        <legend style="font-weight: 600; margin-bottom: 0.5rem">Generate the load from</legend>
+        <% @machines.each do |presence| %>
+          <label style="display: flex; gap: 0.5rem; align-items: flex-start; margin-bottom: 0.75rem; cursor: pointer">
+            <%= radio_button_tag :machine, presence.runner.key, @machine == presence.runner.key,
+                                 id: "machine_#{presence.runner.key}" %>
+            <span>
+              <strong><%= presence.runner.name %></strong>
+              <br><span class="meta"><%= presence.runner.url %></span>
+            </span>
+          </label>
+        <% end %>
+        <% if @machines.one? %>
+          <p class="meta">
+            The only machine answering right now. Others appear here when their
+            runner is up.
+          </p>
+        <% end %>
+      </fieldset>
+    </div>
+
     <div class="measure">
       <fieldset style="border: 0; padding: 0; margin: 0 0 1.25rem 0">
         <legend style="font-weight: 600; margin-bottom: 0.5rem">Scenario</legend>

@@ -52,10 +52,6 @@ module Analysis
       sampled.sum(&:cpu_pct) / sampled.length
     end
 
-    def peak_cpu(window)
-      within(window).map(&:cpu_pct).max
-    end
-
     # Peaks are always scoped to a window rather than taken over the whole file.
     #
     # A server.csv is not guaranteed to describe only its own run: until the

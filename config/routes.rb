@@ -49,6 +49,16 @@ Rails.application.routes.draw do
   get "variant" => "variants#show", as: :variant
   post "variant/:name/switch" => "variants#switch", as: :switch_variant
 
+  # How finished runs reach this dashboard.
+  #
+  # The raw results are ~165MB of CSV on the machine that generated the load, and
+  # this app is not on that machine — so the generator parses its own results and
+  # posts the parsed bundle here. Machine-to-machine, so it is authenticated by a
+  # shared token rather than by a session. See Api::RunsController.
+  namespace :api do
+    resources :runs, only: :create
+  end
+
   # Returns 200 if the app boots with no exceptions.
   get "up" => "rails/health#show", as: :rails_health_check
 end

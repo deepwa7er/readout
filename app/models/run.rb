@@ -50,6 +50,25 @@ class Run < ApplicationRecord
     "server not recorded"
   end
 
+  # Which machine generated this run's load, as a person reads it.
+  #
+  # The stored value is the key the machine calls itself (`bin/runner
+  # --machine`), so it is resolved through the configured fleet to get the
+  # display name — and falls back to the key when a machine has since been
+  # renamed or removed, rather than dropping the fact that it ran somewhere.
+  #
+  # Nil means the run predates recording this, which is left as its own state
+  # rather than backfilled: every such run did come from the Mac, but a label
+  # that says so on the strength of an assumption is indistinguishable from one
+  # that knows.
+  def machine_known? = machine.present?
+
+  def machine_label
+    return nil unless machine_known?
+
+    Harness::Fleet.current.find(machine)&.name || machine
+  end
+
   # Whether this run visited more than one load level, i.e. whether there is a
   # curve to plot throughput against.
   #

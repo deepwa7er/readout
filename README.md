@@ -58,14 +58,49 @@ There is **one** Readout, at <https://readout.intern.deepwa7er.net>, and it can
 do everything: browse results, configure and launch a load test, watch k6's
 output live, and receive the results when the run finishes.
 
-The work happens on the dev box. The dashboard runs on the VPS and drives a
-**runner** service on the Mac, which is where k6 lives and where the CPU to
-generate load is.
+The dashboard runs on the VPS and drives a **runner** service on whichever
+machine is generating the load — where k6 lives and where the CPU to generate
+load is.
 
 ```
-browser ──► readout (VPS) ──tailnet──► runner (Mac) ──► k6 ──► Campfire (fedora-1)
-                  ▲                                                │
-                  └────────── bin/publish ships results ◄───────────┘
+                        ┌─► runner (MacBook)  ──┐
+browser ─► readout (VPS)┤                       ├─► k6 ─► Campfire (fedora-1)
+                  ▲     └─► runner (Desktop) ──┘             │
+                  └──────── bin/publish posts results ◄───────┘
+```
+
+### Which machine generates the load
+
+The launch form asks, and only lists machines whose runner is answering — a box
+that is asleep simply is not on the list.
+
+| | |
+|---|---|
+| **MacBook** | the dev box, on **Wi-Fi** |
+| **Fedora desktop** | 16 cores, **wired** to the same LAN as the Campfire host |
+
+This is not a convenience. A room page is ~400KB, so the wireless link can
+saturate before the application does — and telling those two apart is most of
+what this harness exists for. Running the same test from the wire is the
+cheapest way to rule the network out. The desktop is also a much larger machine,
+so it is far less likely to be the thing that runs out first.
+
+Every run records which box produced it (`bin/run.sh` writes `machine=` into
+`run-config.txt`), and the run page and index both say so. Runs from before this
+existed say **generator not recorded** rather than being attributed to whichever
+machine seems likely.
+
+**One run at a time, across all machines.** Each runner refuses a second run
+within its own process, but they cannot see each other — and every generator
+points at the same Campfire, so a run on one machine would measure the load the
+other is generating. The dashboard is the only thing that can see both, so it
+enforces this.
+
+Setup is one command per machine:
+
+```sh
+cd ~/code/campfire-stress && deploy/install-runner-agent.sh   # on the Mac
+scp deploy/provision-desktop.sh desktop:/tmp/ && ssh desktop 'bash /tmp/provision-desktop.sh'
 ```
 
 The form has **two levers**, both pointing the same way — turn either up and the
@@ -114,38 +149,33 @@ The static charts on an imported run stay server-rendered SVG — see
 Progress covers the **whole run**, accumulated incrementally by the runner
 (reading only bytes appended since the last poll), so watching a test cannot slow
 down the machine generating it.
-When it finishes the runner publishes automatically — imports the results and
-rsyncs the database up — so the run appears on the dashboard with no further
-action. **Publish results** on the run page is the retry if that fails.
-
-Setup is one command on the Mac:
-
-```sh
-cd ~/code/campfire-stress && deploy/install-runner-agent.sh
-```
-
-That installs a launchd agent (`com.deepwa7er.readout-runner`) that starts at
-login and restarts on crash.
+When it finishes the runner publishes automatically, so the run appears on the
+dashboard with no further action. **Publish results** on the run page is the
+retry if that fails.
 
 ### What this exposes
 
-The runner binds the Mac's **tailnet IPv4**, not loopback — that is what lets the
-VPS drive it, and it is the price of having one app instead of two.
+A runner binds its machine's **tailnet IPv4**, not loopback — that is what lets
+the VPS drive it, and it is the price of having one app instead of two.
 
-So a service that starts processes on the laptop is reachable from every device
+So a service that starts processes on those boxes is reachable from every device
 on the tailnet. It is much narrower than an arbitrary command endpoint (fixed
 command, allowlisted scenarios, bounded levers, shared token — see
 `campfire-stress/runner/README.md`), but it is the same category of exposure that
 `breakwater.toml` flags for the `harness` route. Worth revisiting if the tailnet
-ever gains a device trusted less than this laptop.
+ever gains a device trusted less than these machines.
 
-Two consequences of the split worth knowing:
+A consequence worth knowing: **a machine must be awake**. If it is asleep or off
+the tailnet its name does not resolve, it is left out of `RUNNERS`, and it simply
+does not appear on the form. Reading results keeps working — that degradation is
+deliberate, and with the desktop usually powered off it is the normal case rather
+than an edge one.
 
-- **The Mac must be awake.** If it is asleep or off the tailnet, the address does
-  not resolve, `RUNNER_URL` comes up empty, and the launch button simply
-  disappears. Reading results keeps working — that degradation is deliberate.
-- **One run at a time.** A second launch is refused rather than queued, because
-  two concurrent load tests would each measure the other.
+Addresses are resolved on the VPS host at service start, because a container
+there cannot resolve MagicDNS. Tailnet IPs are not constants, so a runner also
+reports its own name in `/healthz`: a machine answering under another machine's
+name is left off the form rather than launched into, since that would record a
+run on one box while the form claimed another.
 
 ## A known error you can ignore
 
@@ -180,8 +210,8 @@ Live at **<https://readout.intern.deepwa7er.net>** (tailnet only, behind
 breakwater's wildcard cert).
 
 ```sh
-bin/publish            # import results here, ship the database up, restart
-tugboat deploy --working-tree   # ship a new build of the app itself
+bin/publish            # parse this machine's results and post them up
+tugboat deploy         # ship a new build of the app itself
 ```
 
 Those are two different things, and the split is the whole design:
@@ -189,11 +219,28 @@ Those are two different things, and the split is the whole design:
 | | changes | how |
 |---|---|---|
 | the **app** | code | `tugboat deploy` — builds an amd64 image, ships the tar, restarts the unit |
-| the **data** | new load-test runs | `bin/publish` — imports here, rsyncs `production.sqlite3` |
+| the **data** | new load-test runs | `bin/publish` — parses here, posts to `/api/runs` |
 
-`bin/publish` exists because the raw results only live on the dev box. The
-deployed instance detects that it has no results directory and presents itself as
-a **published snapshot**: no path, no rescan button. It is not a live view of a
+`bin/publish` exists because the raw results only live on the machine that
+generated them. A run's directory is ~165MB of CSV and JSON; what travels is the
+~600KB worth keeping (`Analysis::RunBundle`) — the parsed levels, the per-second
+series and the chart payload. The dashboard upserts it by stamp.
+
+It runs on **generator** machines, which are not the dashboard and need not be
+Rails hosts, so it is stdlib-only Ruby: no bundler, no Rails boot, no database.
+The analysis files are plain Ruby over IO for exactly this reason. Requiring them
+directly is what keeps one implementation of the arithmetic rather than a second
+one written in whatever language the generator happens to have.
+
+> This replaced importing into a local production database and rsyncing that
+> file up. That worked only while exactly one machine generated load: two
+> machines each hold a database containing only their own runs, so whichever
+> published last replaced the other's history — silently, since nothing about
+> the result looked wrong. Per-run and idempotent is what makes a second
+> generator possible at all.
+
+The deployed instance has no results directory and presents itself as a
+**published snapshot**: no path, no rescan button. It is not a live view of a
 running test.
 
 ### How it runs on the VPS

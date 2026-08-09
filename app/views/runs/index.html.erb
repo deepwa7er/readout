@@ -41,7 +41,7 @@
 <% end %>
 
 <% if @active_test_id %>
-  <%= render "runs/active_banner", test_id: @active_test_id %>
+  <%= render "runs/active_banner", test_id: @active_test_id, machine: @active_test_machine %>
 <% end %>
 
 <% if @runs.empty? %>
@@ -65,6 +65,11 @@
               an experiment rather than a pile of numbers. %>
           <% if run.variant_known? %>
             · <%= run.variant %>
+          <% end %>
+          <%# And which machine generated it, so two runs of the same shape can
+              be told apart when one came from Wi-Fi and one from the wire. %>
+          <% if run.machine_known? %>
+            · from <%= run.machine_label %>
           <% end %>
           <% if run.peak_vus %>
             · peak <%= run.peak_vus %> vus

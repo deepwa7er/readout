@@ -9,7 +9,7 @@ module Analysis
     # harness and the server rather than the load, so they are excluded from the
     # settings a page lists.
     META_KEYS = %w[
-      stamp scenario target generator k6
+      stamp scenario target generator machine k6
       variant server_image server_digest server_env
     ].freeze
 
@@ -48,6 +48,18 @@ module Analysis
     def target = @values["target"]
     def generator = @values["generator"]
     def k6_version = @values["k6"]
+
+    # Which generator machine produced this run, as the dashboard names it.
+    #
+    # Distinct from #generator, which is the box's own hostname. The two Fedora
+    # boxes on this tailnet both answer `fedora` to `hostname`, so the hostname
+    # cannot be relied on to tell one generator from another — and the machine
+    # matters to the numbers, since one generator is wired to the target's LAN
+    # and the other is on Wi-Fi.
+    #
+    # Absent for runs from before bin/run.sh recorded it. Those say so rather
+    # than being attributed to whichever machine seems likely.
+    def machine = @values["machine"]
 
     # The server this run measured. Absent for runs that predate bin/run.sh
     # recording it, and "unknown" when the harness could not read it off the
